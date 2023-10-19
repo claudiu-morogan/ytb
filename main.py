@@ -1,3 +1,4 @@
+# Download mp4 songs from youtube
 from pytube import YouTube
 import PySimpleGUI as sg
 from funcs import dbConnect, resetDB, setVideoToDownloaded
