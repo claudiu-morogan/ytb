@@ -17,3 +17,5 @@ def setVideoToDownloaded(video_id, cursor, dbConnection):
     sql = "UPDATE ytb_downloads SET downloaded=1 where download_id = "+ str(video_id)
     cursor.execute(sql)
     dbConnection.commit()
+
+
