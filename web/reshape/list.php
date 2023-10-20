@@ -1,24 +1,8 @@
 <?php
-$servername = "localhost";
-$username = "claudiu";
-$password = "claudiu";
-$db = 'projects';
-
-// Create connection
-$conn = new mysqli($servername, $username, $password, $db);
-
-// Check connection
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
-
-
 
 $sql = "SELECT download_id, link, if(downloaded=1, 'yes', 'no') downloaded FROM ytb_downloads";
-$dbData = $conn->query($sql);
-
-
-$conn->close();
+$db = new DataBase();
+$dbData = $db->query($sql);
 ?>
 
 <!DOCTYPE html>
