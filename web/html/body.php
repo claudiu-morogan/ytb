@@ -17,5 +17,8 @@
                 require 'html/actions/list.php';
                 break;
         }
+    } else 
+    {
+        require 'html/actions/list.php';
     }
 ?>
