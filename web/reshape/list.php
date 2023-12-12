@@ -32,7 +32,7 @@ $dbData = $db->query($sql);
         <tbody>
             <?php foreach($dbData as $position => $row) { ?>
                 <tr>
-                    <td><?php echo $row['download_id']; ?></td>
+                    <td><?php echo $row['video_id']; ?></td>
                     <td><a href="<?=$row['link'];?>" target="_blank"><?php echo $row['link']; ?></a></td>
                     <td class="text-center"><?php echo ($row['downloaded'] == 'yes') ? '&#10003;' : '&#x2193;'; ?></td>
                 </tr>

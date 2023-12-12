@@ -1,13 +1,14 @@
 # Download mp4 songs from youtube
 from pytube import YouTube
 import PySimpleGUI as sg
-from funcs import dbConnect, resetDB, setVideoToDownloaded
+# from funcs import dbConnect, resetDB, setVideoToDownloaded
+from funcs import *
 
 dbConnection = dbConnect()
 
 cursor = dbConnection.cursor()
-# resetDB(cursor)
-cursor.execute("SELECT link, download_id FROM ytb_downloads WHERE downloaded=0")
+resetDB(cursor)
+cursor.execute("SELECT link, video_id FROM ytb_downloads WHERE downloaded=0")
 
 result = cursor.fetchall()
 if cursor.rowcount != 0:
@@ -19,11 +20,13 @@ if cursor.rowcount != 0:
         songName = yt.author + ' ' + yt.title
         yt.streams.filter(only_audio=True).first().download('tmp/')
 
-        layoutElements.append([sg.Text(songName)])
-        setVideoToDownloaded(video_id, cursor, dbConnection)
-    layoutElements.append([sg.Button("OK")])
 
-    print(result.count)
+        setVideoToDownloaded(video_id, cursor, dbConnection)
+        updateSongDetails(yt.author, yt.title, video_id)
+
+        layoutElements.append([sg.Text(songName)])
+
+    layoutElements.append([sg.Button("OK")])    
     window = sg.Window("List of downloaded songs", layoutElements)
 
     while True:
