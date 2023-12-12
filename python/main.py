@@ -1,8 +1,11 @@
 # Download mp4 songs from youtube
 from pytube import YouTube
 import PySimpleGUI as sg
-# from funcs import dbConnect, resetDB, setVideoToDownloaded
 from funcs import *
+
+from dotenv import load_dotenv
+from pathlib import Path
+import os
 
 dbConnection = dbConnect()
 
@@ -18,7 +21,7 @@ if cursor.rowcount != 0:
         (url, video_id) = (row[0], row[1])
         yt = YouTube(url)
         songName = yt.author + ' ' + yt.title
-        yt.streams.filter(only_audio=True).first().download('tmp/')
+        yt.streams.filter(only_audio=True).first().download(downloadLocation())
 
 
         setVideoToDownloaded(video_id, cursor, dbConnection)
