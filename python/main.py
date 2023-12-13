@@ -6,11 +6,12 @@ from funcs import *
 from dotenv import load_dotenv
 from pathlib import Path
 import os
+import subprocess
 
 dbConnection = dbConnect()
 
 cursor = dbConnection.cursor()
-resetDB(cursor)
+# resetDB(cursor)
 cursor.execute("SELECT link, video_id FROM ytb_downloads WHERE downloaded=0")
 
 result = cursor.fetchall()
@@ -20,8 +21,8 @@ if cursor.rowcount != 0:
     for row in result:
         (url, video_id) = (row[0], row[1])
         yt = YouTube(url)
-        songName = yt.author + ' ' + yt.title
-        yt.streams.filter(only_audio=True).first().download(downloadLocation())
+        songName = yt.author + '_' + yt.title
+        yt.streams.filter(only_audio=True).first().download(downloadLocation()+'/mp4/')
 
 
         setVideoToDownloaded(video_id, cursor, dbConnection)
@@ -40,3 +41,16 @@ if cursor.rowcount != 0:
             break
 
     window.close()
+
+dbConnection.close()
+
+location = downloadLocation()+'/mp4/'
+newLocation = downloadLocation()+'/mp3/'
+for filename in os.listdir(location):
+    if filename.endswith(".mp4"):
+        print(filename)
+        subprocess.run([
+            'ffmpeg',
+            '-i', location+filename,
+            newLocation+filename.replace('.mp4', '.mp3')
+        ])
