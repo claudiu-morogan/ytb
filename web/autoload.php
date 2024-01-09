@@ -2,7 +2,8 @@
 require 'cls/Env.php';
 require 'cls/Song.php';
 
-$env = new DotEnvironment(__DIR__.'/../.env');
+// $env = new DotEnvironment(__DIR__.'/../.env');
+$env = new DotEnvironment(__DIR__.'/.env');
 $env->load();
 
 require 'html/head.php';
