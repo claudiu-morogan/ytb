@@ -1,2 +1,3 @@
 notes.txt
-web/.env
+.env
+/python/__pycache__

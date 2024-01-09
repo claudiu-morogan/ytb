@@ -1,20 +1,26 @@
 version: "3.8"
 services:
+
   db:
-    # build: ./docker/db
     container_name: ytb_mysql
     image: mysql:8.0
     ports:
-      # - 3306:3306
       - "127.0.0.1:3306:3306"
     environment:
-      - MYSQL_USER=claudiu
-      - MYSQL_PASSWORD=claudiu
-      - MYSQL_ROOT_PASSWORD=claudiu
-      - MYSQL_DATABASE=projects
+      # - MYSQL_USER=claudiu
+      # - MYSQL_PASSWORD=claudiu
+      # - MYSQL_ROOT_PASSWORD=claudiu
+      # - MYSQL_DATABASE=projects
+      - MYSQL_USER=$db_user
+      - MYSQL_PASSWORD=$db_password
+      - MYSQL_ROOT_PASSWORD=$db_password
+      - MYSQL_DATABASE=$db_name
     volumes:
       - .docker/db/mysql-custom.cnf:/etc/mysql/conf.d/mysql-custom.cnf
-      - ./sql/tables:/docker-entrypoint-initdb.d
+      - ./sql/install:/docker-entrypoint-initdb.d
+    networks:
+      - ytb_network
+
   web:
     container_name: ytb_web
     build: ./docker/php
@@ -22,5 +28,27 @@ services:
       - 80:80
     volumes:
     - ./web:/var/www/html
-  # python:
-  #   build: ./docker/python
+    - ./.env:/var/www/html/.env
+    - ./docker/php/custom_php.ini:/usr/local/etc/php/conf.d/custom_php.ini # Mount the custom php.ini file
+    networks:
+      - ytb_network
+
+  python:
+    container_name: ytb_python
+    build: ./docker/python
+    tty: true
+    working_dir: /scripts
+    command: ["uvicorn", "backendAPI:app", "--host", "0.0.0.0", "--port", "353", "--reload"]    
+    volumes:
+      - ./python:/scripts
+      - ./.env:/scripts/.env
+      - ./downloads/mp3:/scripts/mp3
+      - ./downloads/mp4:/scripts/mp4
+    ports:
+      - 353:8000
+    networks:
+      - ytb_network
+
+networks:
+  ytb_network:
+    driver: bridge

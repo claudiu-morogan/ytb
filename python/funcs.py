@@ -8,7 +8,7 @@ def resetDB(cursor):
     cursor.execute(sql)
 
 def dbConnect():
-    dotenv_path = Path('../.env')
+    dotenv_path = Path('.env')
     load_dotenv(dotenv_path=dotenv_path)
 
     db_host = os.getenv('db_host')
