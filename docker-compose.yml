@@ -6,11 +6,7 @@ services:
     image: mysql:8.0
     ports:
       - "127.0.0.1:3306:3306"
-    environment:
-      # - MYSQL_USER=claudiu
-      # - MYSQL_PASSWORD=claudiu
-      # - MYSQL_ROOT_PASSWORD=claudiu
-      # - MYSQL_DATABASE=projects
+    environment:      
       - MYSQL_USER=$db_user
       - MYSQL_PASSWORD=$db_password
       - MYSQL_ROOT_PASSWORD=$db_password
