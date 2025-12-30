@@ -31,17 +31,19 @@ services:
 
   python:
     container_name: ytb_python
-    build: ./docker/python
+    build:
+      context: .
+      dockerfile: ./docker/python/Dockerfile
     tty: true
     working_dir: /scripts
-    command: ["uvicorn", "backendAPI:app", "--host", "0.0.0.0", "--port", "353", "--reload"]    
+    command: ["uvicorn", "backendAPI:app", "--host", "0.0.0.0", "--port", "353", "--reload"]
     volumes:
       - ./python:/scripts
       - ./.env:/scripts/.env
       - ./downloads/mp3:/scripts/mp3
       - ./downloads/mp4:/scripts/mp4
     ports:
-      - 353:8000
+      - 353:353
     networks:
       - ytb_network
 

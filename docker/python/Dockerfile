@@ -1,12 +1,25 @@
-FROM ubuntu:latest
-RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONTAINER_TIMEZONE > /etc/timezone
-RUN apt-get update -qq && apt-get install ffmpeg -y
-# RUN apt install software-properties-common -y
-RUN apt install python3 -y
-RUN apt install python3-pip -y
-RUN apt install python3-tk -y
-RUN pip3 install pathlib mysql-connector-python python-dotenv pytube PySimpleGUI
-RUN pip install fastapi
-RUN pip install uvicorn
+FROM python:3.11-slim
 
-# RUN cd /scripts && uvicorn apiTest:app --host 0.0.0.0 --port 353
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies (only ffmpeg needed for conversion)
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /scripts
+
+# Copy requirements file
+COPY python/requirements.txt /scripts/requirements.txt
+
+# Upgrade pip and install dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Expose port
+EXPOSE 353

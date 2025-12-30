@@ -10,23 +10,31 @@ class Song extends DataBase
     }
 
     public function addSong($data)
-    {        
-        if($this->checkForDuplicates($data['link']) == true)
+    {
+        $link = trim($data['link']);
+
+        if($link == '')
         {
-            $message = ['danger' => 'Duplicates found'];   
-            return $message;         
+            $message = [ 'danger' => 'Link is empty'];
+            return $message;
         }
 
-        if(trim($data['link']) == '')
+        if(!$this->isValidYouTubeUrl($link))
         {
-            $message = [ 'danger' => 'Link is empty'];   
-            return $message;         
+            $message = ['danger' => 'Invalid YouTube URL'];
+            return $message;
         }
 
-        $sql = "
-            INSERT INTO ytb_downloads (link)
-            VALUES ('".trim($data['link'])."')";        
-        $this->execute($sql);
+        if($this->checkForDuplicates($link) == true)
+        {
+            $message = ['danger' => 'Duplicates found'];
+            return $message;
+        }
+
+        $stmt = $this->connection->prepare("INSERT INTO ytb_downloads (link) VALUES (?)");
+        $stmt->bind_param("s", $link);
+        $stmt->execute();
+        $stmt->close();
 
         $message = ['success' => 'New record created successfully'];
 
@@ -46,15 +54,30 @@ class Song extends DataBase
 
     protected function checkForDuplicates($url)
     {
-        $sql = "
-            SELECT * FROM ytb_downloads
-            WHERE link = '".$url."'";
-        
-        $result = $this->query($sql);
-        if ($result->num_rows > 0) {
-            return true;
-        }
-        return false;
+        $stmt = $this->connection->prepare("SELECT * FROM ytb_downloads WHERE link = ?");
+        $stmt->bind_param("s", $url);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $hasDuplicates = $result->num_rows > 0;
+        $stmt->close();
 
+        return $hasDuplicates;
+    }
+
+    protected function isValidYouTubeUrl($url)
+    {
+        // Check if URL is valid
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        // Parse the URL
+        $parsedUrl = parse_url($url);
+        $host = isset($parsedUrl['host']) ? $parsedUrl['host'] : '';
+
+        // Check for valid YouTube domains
+        $validHosts = ['www.youtube.com', 'youtube.com', 'youtu.be', 'm.youtube.com'];
+
+        return in_array($host, $validHosts);
     }
 }

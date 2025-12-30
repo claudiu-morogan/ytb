@@ -25,19 +25,20 @@ def dbConnect():
     return projectDB
 
 def downloadLocation():
-    dotenv_path = Path('../.env')
+    dotenv_path = Path('.env')
     load_dotenv(dotenv_path=dotenv_path)
 
     download_location = os.getenv('download_location')
     return download_location
 
 def setVideoToDownloaded(video_id, cursor, dbConnection):
-    sql = "UPDATE ytb_downloads SET downloaded=1 where video_id = "+ str(video_id)
-    cursor.execute(sql)
+    sql = "UPDATE ytb_downloads SET downloaded=1 WHERE video_id = %s"
+    val = (str(video_id),)
+    cursor.execute(sql, val)
     dbConnection.commit()
 
 
-def updateSongDetails(artist, title, video_id):   
+def updateSongDetails(artist, title, video_id):
     dbConnection = dbConnect()
 
     sql = "SELECT count(*) registrations FROM ytb_song_details where video_id = %s"
@@ -46,7 +47,7 @@ def updateSongDetails(artist, title, video_id):
     cursor = dbConnection.cursor()
     cursor.execute(sql, val)
     result = cursor.fetchone()
-    count = result[0]    
+    count = result[0]
 
     if count == 1:
         sql = "UPDATE ytb_song_details SET artist = %s, song = %s where video_id = %s"
@@ -60,17 +61,3 @@ def updateSongDetails(artist, title, video_id):
         dbConnection.commit()
 
     dbConnection.close()
-
-    
-
-    
-        
-
-
-
-
-
-
-    
-
-

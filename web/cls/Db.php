@@ -19,7 +19,8 @@ class DataBase {
     public function connect() {
         $conn = new mysqli($this->host, $this->username, $this->password, $this->database);
         if ($conn->connect_error) {
-            die("Connection failed: " . $conn->connect_error);
+            error_log("Database Connection Error: " . $conn->connect_error);
+            die("Database connection failed. Please contact the administrator.");
         }
         return $conn;
     }
@@ -27,7 +28,8 @@ class DataBase {
     public function query($sql) {
         $result = $this->connection->query($sql);
         if ($result === false) {
-            die("Error: " . $sql . "<br>" . $this->connection->error);
+            error_log("Database Error: " . $this->connection->error . " | Query: " . $sql);
+            die("A database error occurred. Please contact the administrator.");
         }
         return $result;
     }

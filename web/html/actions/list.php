@@ -25,10 +25,10 @@ $dbData = $db->query($sql);
             <tbody>
                 <?php foreach($dbData as $position => $row) { ?>
                     <tr>
-                        <td><?php echo $row['video_id']; ?></td>
-                        <td><?php echo $row['artist']; ?></td>
-                        <td><?php echo $row['song']; ?></td>
-                        <td><a href="<?=$row['link'];?>" target="_blank"><?php echo $row['link']; ?></a></td>
+                        <td><?php echo htmlspecialchars($row['video_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($row['artist'] ?? 'N/A', ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($row['song'] ?? 'N/A', ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><a href="<?php echo htmlspecialchars($row['link'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer"><?php echo htmlspecialchars($row['link'] ?? '', ENT_QUOTES, 'UTF-8'); ?></a></td>
                         <td class="text-center"><?php echo ($row['downloaded'] == 'yes') ? '&#10003;' : '&#x2193;'; ?></td>
                     </tr>
                 <?php } ?>
