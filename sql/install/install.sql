@@ -2,9 +2,10 @@ create table ytb_downloads (
 	video_id int auto_increment primary key,
 	link varchar(255) not null,
 	downloaded tinyint default 0,
-	genre enum('music', 'cartoons') default 'music',
+	playlist varchar(100) default 'General',
 	INDEX idx_link (link),
-	INDEX idx_downloaded (downloaded)
+	INDEX idx_downloaded (downloaded),
+	INDEX idx_playlist (playlist)
 );
 
 create table ytb_song_details(
@@ -18,16 +19,16 @@ create table ytb_song_details(
     FOREIGN KEY (video_id) REFERENCES ytb_downloads(video_id) ON DELETE CASCADE
 );
 
-CREATE OR REPLACE VIEW `ytb_songs_list` AS 
+CREATE OR REPLACE VIEW `ytb_songs_list` AS
 select
 	`yd`.`video_id` AS `video_id`,
 	`ysd`.`artist` AS `artist`,
 	`ysd`.`song` AS `song`,
 	`yd`.`link` AS `link`,
+	`yd`.`playlist` AS `playlist`,
 	if(`yd`.`downloaded` = 1,
 	'yes',
 	'no') AS `downloaded`
 from
 	`ytb_downloads` `yd`
 	left join `ytb_song_details` `ysd` on `yd`.`video_id` = `ysd`.`video_id`
-	

@@ -14,12 +14,12 @@ def download():
         dbConnection = dbConnect()
 
         cursor = dbConnection.cursor()
-        cursor.execute("SELECT link, video_id FROM ytb_downloads WHERE downloaded=0")
+        cursor.execute("SELECT link, video_id, COALESCE(playlist, 'General') as playlist FROM ytb_downloads WHERE downloaded=0")
 
         result = cursor.fetchall()
         if cursor.rowcount != 0:
             for row in result:
-                (url, video_id) = (row[0], row[1])
+                (url, video_id, playlist) = (row[0], row[1], row[2])
                 try:
                     yt = YouTube(url)
 
@@ -30,11 +30,15 @@ def download():
                     songName = f"{artist}_{title}"
                     logger.info(f"Processing: {songName}")
 
+                    # Create playlist-specific folder
+                    mp4_folder = os.path.join(downloadLocation(), 'mp4', playlist)
+                    os.makedirs(mp4_folder, exist_ok=True)
+
                     # Download audio stream
                     audio_stream = yt.streams.filter(only_audio=True).first()
                     if audio_stream:
-                        audio_stream.download(downloadLocation()+'/mp4/')
-                        logger.info(f"Downloaded audio for: {title}")
+                        audio_stream.download(mp4_folder)
+                        logger.info(f"Downloaded audio for: {title} to playlist: {playlist}")
                     else:
                         logger.error(f"No audio stream found for: {url}")
                         continue
@@ -49,53 +53,64 @@ def download():
 
         dbConnection.close()
 
-        # Convert M4A/MP4 to MP3
-        location = downloadLocation()+'/mp4/'
-        newLocation = downloadLocation()+'/mp3/'
+        # Convert M4A/MP4 to MP3 - Process all playlist folders
+        base_mp4_location = os.path.join(downloadLocation(), 'mp4')
+        base_mp3_location = os.path.join(downloadLocation(), 'mp3')
 
-        # Ensure MP3 directory exists
-        os.makedirs(newLocation, exist_ok=True)
-        logger.info(f"Checking for audio files in: {location}")
+        logger.info(f"Scanning for audio files in: {base_mp4_location}")
 
-        # Look for both .mp4 and .m4a files
-        audio_files = [f for f in os.listdir(location) if f.endswith(('.mp4', '.m4a', '.webm'))]
-        logger.info(f"Found {len(audio_files)} audio files to convert")
+        # Process all playlist folders
+        total_converted = 0
+        if os.path.exists(base_mp4_location):
+            # Get all playlist folders
+            for playlist_folder in os.listdir(base_mp4_location):
+                playlist_path = os.path.join(base_mp4_location, playlist_folder)
 
-        for filename in audio_files:
-            input_path = os.path.join(location, filename)
-            # Replace any audio extension with .mp3
-            mp3_filename = filename.rsplit('.', 1)[0] + '.mp3'
-            mp3_path = os.path.join(newLocation, mp3_filename)
+                if os.path.isdir(playlist_path):
+                    logger.info(f"Processing playlist: {playlist_folder}")
 
-            logger.info(f"Converting: {filename}")
-            try:
-                result = subprocess.run([
-                    'ffmpeg',
-                    '-y',  # Overwrite output file if it exists
-                    '-i', input_path,
-                    '-vn',  # No video
-                    '-ar', '44100',  # Audio sample rate
-                    '-ac', '2',  # Audio channels (stereo)
-                    '-b:a', '192k',  # Audio bitrate
-                    mp3_path
-                ], check=True, capture_output=True, text=True)
+                    # Create corresponding MP3 playlist folder
+                    mp3_playlist_path = os.path.join(base_mp3_location, playlist_folder)
+                    os.makedirs(mp3_playlist_path, exist_ok=True)
 
-                logger.info(f"✓ Converted {filename} to MP3")
+                    # Find all audio files in this playlist folder
+                    audio_files = [f for f in os.listdir(playlist_path) if f.endswith(('.mp4', '.m4a', '.webm'))]
+                    logger.info(f"Found {len(audio_files)} audio files in {playlist_folder}")
 
-                # Delete the source file after successful conversion
-                os.remove(input_path)
-                logger.info(f"✓ Deleted source file: {filename}")
+                    for filename in audio_files:
+                        input_path = os.path.join(playlist_path, filename)
+                        mp3_filename = filename.rsplit('.', 1)[0] + '.mp3'
+                        mp3_path = os.path.join(mp3_playlist_path, mp3_filename)
 
-            except subprocess.CalledProcessError as e:
-                logger.error(f"✗ Failed to convert {filename}")
-                logger.error(f"  STDOUT: {e.stdout}")
-                logger.error(f"  STDERR: {e.stderr}")
-                continue
-            except OSError as e:
-                logger.error(f"✗ Failed to delete {filename}: {str(e)}")
-                continue
+                        logger.info(f"Converting: {playlist_folder}/{filename}")
+                        try:
+                            subprocess.run([
+                                'ffmpeg',
+                                '-y',
+                                '-i', input_path,
+                                '-vn',
+                                '-ar', '44100',
+                                '-ac', '2',
+                                '-b:a', '192k',
+                                mp3_path
+                            ], check=True, capture_output=True, text=True)
 
-        logger.info("Conversion process completed")
+                            logger.info(f"✓ Converted to: {playlist_folder}/{mp3_filename}")
+
+                            # Delete the source file
+                            os.remove(input_path)
+                            logger.info(f"✓ Deleted source: {filename}")
+                            total_converted += 1
+
+                        except subprocess.CalledProcessError as e:
+                            logger.error(f"✗ Failed to convert {filename}")
+                            logger.error(f"  STDERR: {e.stderr}")
+                            continue
+                        except OSError as e:
+                            logger.error(f"✗ Failed to delete {filename}: {str(e)}")
+                            continue
+
+        logger.info(f"Conversion completed: {total_converted} files converted")
         return 'success'
     except Exception as e:
         logger.error(f"Download function failed: {str(e)}", exc_info=True)

@@ -13,6 +13,15 @@
             case 'download':
                 require 'html/actions/download.php';
                 break;
+            case 'playlists':
+                require 'html/actions/playlists.php';
+                break;
+            case 'delete':
+                require 'html/actions/delete.php';
+                break;
+            case 'debug_delete':
+                require 'html/actions/debug_delete.php';
+                break;
             default:
                 require 'html/actions/list.php';
                 break;
