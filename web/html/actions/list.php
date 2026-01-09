@@ -2,17 +2,32 @@
 // Filter by playlist if specified
 $playlistFilter = $_GET['playlist'] ?? null;
 
-if ($playlistFilter) {
-    $sql = "SELECT * FROM ytb_songs_list WHERE playlist = ? ORDER BY video_id DESC";
-    $db = new DataBase();
-    $stmt = $db->connection->prepare($sql);
-    $stmt->bind_param("s", $playlistFilter);
-    $stmt->execute();
-    $dbData = $stmt->get_result();
-} else {
-    $sql = "SELECT * FROM ytb_songs_list ORDER BY video_id DESC";
-    $db = new DataBase();
-    $dbData = $db->query($sql);
+try {
+    if ($playlistFilter) {
+        $sql = "SELECT * FROM ytb_songs_list WHERE playlist = ? ORDER BY video_id DESC";
+        $db = new DataBase();
+        $stmt = $db->connection->prepare($sql);
+
+        if (!$stmt) {
+            throw new Exception("Failed to prepare statement: " . $db->connection->error);
+        }
+
+        $stmt->bind_param("s", $playlistFilter);
+        $stmt->execute();
+        $dbData = $stmt->get_result();
+        $stmt->close();
+    } else {
+        $sql = "SELECT * FROM ytb_songs_list ORDER BY video_id DESC";
+        $db = new DataBase();
+        $dbData = $db->query($sql);
+
+        if (!$dbData) {
+            throw new Exception("Failed to execute query");
+        }
+    }
+} catch (Exception $e) {
+    error_log("Database error in list.php: " . $e->getMessage());
+    $dbData = null;
 }
 ?>
 
@@ -55,7 +70,7 @@ if ($playlistFilter) {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($dbData->num_rows > 0): ?>
+                    <?php if ($dbData && $dbData->num_rows > 0): ?>
                         <?php foreach($dbData as $position => $row): ?>
                             <tr>
                                 <td class="text-center"><strong><?php echo htmlspecialchars($row['video_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong></td>
@@ -74,15 +89,25 @@ if ($playlistFilter) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <a href="<?php echo htmlspecialchars($row['link'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
-                                       target="_blank"
-                                       rel="noopener noreferrer"
-                                       class="text-decoration-none">
-                                        <i class="fas fa-external-link-alt me-2"></i>
-                                        <span class="text-truncate d-inline-block" style="max-width: 200px;">
-                                            <?php echo htmlspecialchars($row['link'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
-                                        </span>
-                                    </a>
+                                    <?php
+                                    $link = $row['link'] ?? '';
+                                    // Validate that it's a safe URL (starts with http:// or https://)
+                                    $isSafeUrl = filter_var($link, FILTER_VALIDATE_URL) &&
+                                                 (strpos($link, 'http://') === 0 || strpos($link, 'https://') === 0);
+                                    ?>
+                                    <?php if ($isSafeUrl): ?>
+                                        <a href="<?php echo htmlspecialchars($link, ENT_QUOTES, 'UTF-8'); ?>"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           class="text-decoration-none">
+                                            <i class="fas fa-external-link-alt me-2"></i>
+                                            <span class="text-truncate d-inline-block" style="max-width: 200px;">
+                                                <?php echo htmlspecialchars($link, ENT_QUOTES, 'UTF-8'); ?>
+                                            </span>
+                                        </a>
+                                    <?php else: ?>
+                                        <span class="text-muted"><i class="fas fa-ban me-2"></i>Invalid URL</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="text-center">
                                     <?php if ($row['downloaded'] == 'yes'): ?>
@@ -96,7 +121,7 @@ if ($playlistFilter) {
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <button onclick="confirmDelete(<?php echo $row['video_id']; ?>, '<?php echo htmlspecialchars($row['song'] ?? 'this song', ENT_QUOTES, 'UTF-8'); ?>')"
+                                    <button onclick="confirmDelete(<?php echo (int)$row['video_id']; ?>, <?php echo htmlspecialchars(json_encode($row['song'] ?? 'this song'), ENT_QUOTES, 'UTF-8'); ?>)"
                                             class="btn btn-delete btn-sm"
                                             title="Delete song">
                                         <i class="fas fa-trash-alt me-1"></i>Delete

@@ -1,3 +1,4 @@
 .env
 notes.txt
 /python/__pycache__
+/downloads/*
