@@ -63,6 +63,64 @@ def updateSongDetails(artist, title, video_id):
     dbConnection.close()
 
 
+def cleanupEmptyPlaylists():
+    """
+    Remove empty playlist folders from both mp3 and mp4 directories.
+    Also cleans up playlists with no songs in the database.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info("=== Starting empty playlist cleanup ===")
+
+    base_mp3 = os.path.join(downloadLocation(), 'mp3')
+    base_mp4 = os.path.join(downloadLocation(), 'mp4')
+
+    removed_folders = []
+
+    # Clean up mp3 folders
+    for base_path in [base_mp3, base_mp4]:
+        if os.path.exists(base_path):
+            for playlist_name in os.listdir(base_path):
+                # Skip the General playlist
+                if playlist_name == 'General':
+                    continue
+
+                playlist_path = os.path.join(base_path, playlist_name)
+
+                if os.path.isdir(playlist_path):
+                    try:
+                        contents = os.listdir(playlist_path)
+                        # Filter for actual media files
+                        media_files = [f for f in contents if f.endswith(('.mp3', '.mp4', '.m4a', '.webm'))]
+
+                        if len(media_files) == 0:
+                            logger.info(f"Found empty playlist folder: {playlist_path}")
+
+                            # Remove any leftover files
+                            for item in contents:
+                                item_path = os.path.join(playlist_path, item)
+                                try:
+                                    if os.path.isfile(item_path):
+                                        os.remove(item_path)
+                                except Exception as e:
+                                    logger.warning(f"Could not remove {item_path}: {str(e)}")
+
+                            # Remove the empty directory
+                            os.rmdir(playlist_path)
+                            removed_folders.append(playlist_path)
+                            logger.info(f"✓ Removed empty playlist folder: {playlist_path}")
+                    except Exception as e:
+                        logger.warning(f"Error processing folder {playlist_path}: {str(e)}")
+
+    if removed_folders:
+        logger.info(f"=== Cleanup completed: removed {len(removed_folders)} empty folders ===")
+    else:
+        logger.info("=== Cleanup completed: no empty folders found ===")
+
+    return len(removed_folders)
+
+
 def deleteSong(video_id):
     """
     Delete a song from database and remove MP3 file from filesystem
@@ -176,6 +234,32 @@ def deleteSong(video_id):
                 logger.warning("Note: Database record was deleted, but physical file was not found")
         else:
             logger.warning(f"No artist/song info available for video_id {video_id}, skipping file deletion")
+
+        # Check if playlist folder is empty and delete it
+        if playlist and playlist != 'General':
+            playlist_folder = os.path.join(downloadLocation(), 'mp3', playlist)
+            try:
+                if os.path.isdir(playlist_folder):
+                    # Check if folder is empty (no files, only potentially .DS_Store or similar)
+                    contents = os.listdir(playlist_folder)
+                    mp3_files = [f for f in contents if f.endswith('.mp3')]
+
+                    if len(mp3_files) == 0:
+                        logger.info(f"Playlist folder '{playlist}' is empty, removing it")
+                        # Remove any remaining files (like .DS_Store)
+                        for item in contents:
+                            item_path = os.path.join(playlist_folder, item)
+                            try:
+                                if os.path.isfile(item_path):
+                                    os.remove(item_path)
+                            except Exception as e:
+                                logger.warning(f"Could not remove {item_path}: {str(e)}")
+
+                        # Remove the empty directory
+                        os.rmdir(playlist_folder)
+                        logger.info(f"✓ Removed empty playlist folder: {playlist_folder}")
+            except Exception as e:
+                logger.warning(f"Error checking/removing playlist folder {playlist_folder}: {str(e)}")
 
         logger.info(f"=== Delete operation completed for video_id: {video_id} (DB: deleted, File: {'deleted' if file_deleted else 'not found'}) ===")
         return True

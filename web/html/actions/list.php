@@ -48,6 +48,11 @@ try {
                 <?php endif; ?>
             </div>
             <div class="col-md-6 text-end">
+                <?php if ($dbData && $dbData->num_rows > 0): ?>
+                    <button onclick="confirmDeleteAll()" class="btn btn-delete me-2">
+                        <i class="fas fa-trash-alt me-2"></i>Delete All
+                    </button>
+                <?php endif; ?>
                 <a href="?action=download" class="btn btn-premium me-2">
                     <i class="fas fa-download me-2"></i>Download Pending
                 </a>
@@ -151,6 +156,22 @@ try {
 function confirmDelete(id, songName) {
     if(confirm('Are you sure you want to delete "' + songName + '"?\n\nThis will remove the song from the database and delete the MP3 file.')) {
         window.location.href = '?action=delete&id=' + id;
+    }
+}
+
+function confirmDeleteAll() {
+    const playlistParam = new URLSearchParams(window.location.search).get('playlist');
+    const playlistName = playlistParam ? playlistParam : 'all songs';
+
+    const message = playlistParam
+        ? `Are you sure you want to delete ALL songs from the "${playlistName}" playlist?\n\nThis will:\n- Remove all songs from the database\n- Delete all MP3 files from this playlist\n\nThis action cannot be undone!`
+        : 'Are you sure you want to delete ALL songs from ALL playlists?\n\nThis will:\n- Remove all songs from the database\n- Delete all MP3 files\n\nThis action cannot be undone!';
+
+    if(confirm(message)) {
+        const url = playlistParam
+            ? '?action=delete_all&playlist=' + encodeURIComponent(playlistParam)
+            : '?action=delete_all';
+        window.location.href = url;
     }
 }
 </script>

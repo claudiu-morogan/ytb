@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from main import *
-from funcs import deleteSong
+from funcs import deleteSong, cleanupEmptyPlaylists
 import logging
 
 app = FastAPI()
@@ -27,6 +27,8 @@ def delete_song(video_id: int):
     try:
         success = deleteSong(video_id)
         if success:
+            # Clean up empty playlists after deletion
+            cleanupEmptyPlaylists()
             return {"status": "success", "message": f"Song {video_id} deleted successfully"}
         else:
             return {"status": "error", "message": f"Song {video_id} not found"}

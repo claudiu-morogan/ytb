@@ -111,6 +111,10 @@ def download():
                             continue
 
         logger.info(f"Conversion completed: {total_converted} files converted")
+
+        # Clean up empty playlist folders
+        cleanupEmptyPlaylists()
+
         return 'success'
     except Exception as e:
         logger.error(f"Download function failed: {str(e)}", exc_info=True)
