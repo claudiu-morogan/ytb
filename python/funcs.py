@@ -132,12 +132,22 @@ def deleteSong(video_id):
                         artist_lower = artist.lower() if artist else ""
                         song_lower = song.lower() if song else ""
 
+                        # Normalize strings by removing characters that can't be in filenames
+                        # This handles cases where database has "M/V" but filename has "MV"
+                        def normalize_for_matching(s):
+                            """Remove or replace characters that can't be in filenames"""
+                            return s.replace('/', '').replace('\\', '').replace(':', '').replace('|', '').replace('"', '').replace('*', '').replace('?', '').replace('<', '').replace('>', '')
+
+                        filename_normalized = normalize_for_matching(filename_lower)
+                        artist_normalized = normalize_for_matching(artist_lower)
+                        song_normalized = normalize_for_matching(song_lower)
+
                         # Try multiple matching strategies
-                        # Strategy 1: File contains both artist and song
-                        match_both = artist_lower and song_lower and artist_lower in filename_lower and song_lower in filename_lower
+                        # Strategy 1: File contains both artist and song (normalized)
+                        match_both = artist_normalized and song_normalized and artist_normalized in filename_normalized and song_normalized in filename_normalized
 
                         # Strategy 2: File contains song name (for cases where artist is YouTube channel, not actual artist)
-                        match_song_only = song_lower and song_lower in filename_lower
+                        match_song_only = song_normalized and song_normalized in filename_normalized
 
                         if match_both or match_song_only:
                             file_path = os.path.join(search_path, filename)

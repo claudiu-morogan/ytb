@@ -3,13 +3,14 @@
 $playlistFilter = $_GET['playlist'] ?? null;
 
 try {
+    $db = new DataBase();
+
     if ($playlistFilter) {
         $sql = "SELECT * FROM ytb_songs_list WHERE playlist = ? ORDER BY video_id DESC";
-        $db = new DataBase();
-        $stmt = $db->connection->prepare($sql);
+        $stmt = $db->prepare($sql);
 
         if (!$stmt) {
-            throw new Exception("Failed to prepare statement: " . $db->connection->error);
+            throw new Exception("Failed to prepare statement");
         }
 
         $stmt->bind_param("s", $playlistFilter);
@@ -18,7 +19,6 @@ try {
         $stmt->close();
     } else {
         $sql = "SELECT * FROM ytb_songs_list ORDER BY video_id DESC";
-        $db = new DataBase();
         $dbData = $db->query($sql);
 
         if (!$dbData) {

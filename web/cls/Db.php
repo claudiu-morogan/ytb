@@ -36,7 +36,17 @@ class DataBase {
 
     public function execute($sql)
     {
-        return $this->connection->query($sql);        
+        return $this->connection->query($sql);
+    }
+
+    public function prepare($sql)
+    {
+        $stmt = $this->connection->prepare($sql);
+        if ($stmt === false) {
+            error_log("Database Prepare Error: " . $this->connection->error . " | Query: " . $sql);
+            return false;
+        }
+        return $stmt;
     }
 
     public function close() {
