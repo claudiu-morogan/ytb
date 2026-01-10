@@ -22,6 +22,9 @@
             case 'delete_all':
                 require 'html/actions/delete_all.php';
                 break;
+            case 'delete_playlist':
+                require 'html/actions/delete_playlist.php';
+                break;
             case 'debug_delete':
                 require 'html/actions/debug_delete.php';
                 break;

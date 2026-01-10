@@ -63,14 +63,38 @@ if($_POST && isset($_POST['link']))
                         <label for="playlist" class="form-label">
                             <i class="fas fa-folder me-2" style="color: var(--primary);"></i>
                             Playlist
+                            <?php if(count($existingPlaylists) > 0): ?>
+                                <span class="badge bg-info ms-2"><?php echo count($existingPlaylists); ?> existing</span>
+                            <?php endif; ?>
                         </label>
-                        <input type="text"
-                               name="playlist"
-                               id="playlist"
-                               class="form-control form-control-premium"
-                               placeholder="Enter playlist name or select existing"
-                               value="General"
-                               list="playlistOptions">
+
+                        <?php if(count($existingPlaylists) > 0): ?>
+                            <!-- Quick select buttons for existing playlists -->
+                            <div class="mb-2 d-flex flex-wrap gap-2" id="playlistQuickSelect">
+                                <?php foreach($existingPlaylists as $pl): ?>
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-primary playlist-btn"
+                                            data-playlist="<?php echo htmlspecialchars($pl, ENT_QUOTES, 'UTF-8'); ?>"
+                                            onclick="selectPlaylist('<?php echo htmlspecialchars($pl, ENT_QUOTES, 'UTF-8'); ?>')">
+                                        <i class="fas fa-folder me-1"></i>
+                                        <?php echo htmlspecialchars($pl, ENT_QUOTES, 'UTF-8'); ?>
+                                    </button>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="input-group">
+                            <input type="text"
+                                   name="playlist"
+                                   id="playlist"
+                                   class="form-control form-control-premium"
+                                   placeholder="Type new playlist name"
+                                   value="General"
+                                   list="playlistOptions">
+                            <button type="button" class="btn btn-outline-secondary" onclick="clearPlaylist()" title="Clear and create new">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
                         <datalist id="playlistOptions">
                             <?php foreach($existingPlaylists as $pl): ?>
                                 <option value="<?php echo htmlspecialchars($pl, ENT_QUOTES, 'UTF-8'); ?>">
@@ -78,7 +102,7 @@ if($_POST && isset($_POST['link']))
                         </datalist>
                         <small class="text-muted">
                             <i class="fas fa-lightbulb me-1"></i>
-                            Type a new name or select from existing playlists
+                            Click a playlist above to select, or type a new name to create one
                         </small>
                     </div>
 
@@ -142,4 +166,66 @@ setTimeout(function() {
         }, 500);
     });
 }, 5000);
+
+// Playlist selection functions
+function selectPlaylist(playlistName) {
+    const input = document.getElementById('playlist');
+    input.value = playlistName;
+
+    // Update active state of buttons
+    document.querySelectorAll('.playlist-btn').forEach(btn => {
+        if (btn.dataset.playlist === playlistName) {
+            btn.classList.remove('btn-outline-primary');
+            btn.classList.add('btn-primary');
+        } else {
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-outline-primary');
+        }
+    });
+
+    // Focus on link input for better UX
+    document.getElementById('link').focus();
+}
+
+function clearPlaylist() {
+    const input = document.getElementById('playlist');
+    input.value = '';
+    input.focus();
+
+    // Reset all buttons to outline
+    document.querySelectorAll('.playlist-btn').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-primary');
+    });
+}
+
+// Initialize the selected playlist button on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const currentValue = document.getElementById('playlist').value;
+    if (currentValue) {
+        document.querySelectorAll('.playlist-btn').forEach(btn => {
+            if (btn.dataset.playlist === currentValue) {
+                btn.classList.remove('btn-outline-primary');
+                btn.classList.add('btn-primary');
+            }
+        });
+    }
+});
 </script>
+
+<style>
+.playlist-btn {
+    border-radius: 20px;
+    transition: all 0.3s ease;
+}
+
+.playlist-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.playlist-btn.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: transparent;
+}
+</style>
