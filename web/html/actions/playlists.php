@@ -68,10 +68,19 @@ $playlists = $db->query($sql);
                                     </span>
                                 </div>
 
-                                <a href="?action=list&playlist=<?php echo urlencode($playlist['playlist']); ?>"
-                                   class="btn btn-premium w-100">
-                                    <i class="fas fa-eye me-2"></i>View Songs
-                                </a>
+                                <div class="d-flex gap-2">
+                                    <a href="?action=list&playlists=<?php echo urlencode($playlist['playlist']); ?>"
+                                       class="btn btn-premium flex-grow-1">
+                                        <i class="fas fa-eye me-2"></i>View Songs
+                                    </a>
+                                    <?php if ($playlist['playlist'] !== 'General'): ?>
+                                        <button onclick="confirmDeletePlaylist(<?php echo htmlspecialchars(json_encode($playlist['playlist']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo $playlist['total_songs']; ?>)"
+                                                class="btn btn-delete"
+                                                title="Delete playlist">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -96,3 +105,13 @@ $playlists = $db->query($sql);
     box-shadow: 0 10px 30px rgba(0,0,0,0.15) !important;
 }
 </style>
+
+<script>
+function confirmDeletePlaylist(playlistName, songCount) {
+    const message = `Are you sure you want to delete the playlist "${playlistName}"?\n\nThis will:\n- Delete ${songCount} song(s) from the database\n- Remove all MP3 files from this playlist\n- Delete the playlist folder\n\nThis action cannot be undone!`;
+
+    if(confirm(message)) {
+        window.location.href = '?action=delete_playlist&playlist=' + encodeURIComponent(playlistName);
+    }
+}
+</script>

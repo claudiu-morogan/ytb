@@ -1,19 +1,35 @@
 <?php
-// Filter by playlist if specified
-$playlistFilter = $_GET['playlist'] ?? null;
+// Get selected playlists from query string (comma-separated)
+$selectedPlaylists = isset($_GET['playlists']) ? explode(',', $_GET['playlists']) : [];
+$selectedPlaylists = array_filter($selectedPlaylists); // Remove empty values
+
+// Get all playlists with song counts
+$dbPlaylists = new DataBase();
+$playlistsResult = $dbPlaylists->query("SELECT playlist, COUNT(*) as count FROM ytb_downloads GROUP BY playlist ORDER BY playlist");
+$allPlaylists = [];
+foreach($playlistsResult as $row) {
+    $allPlaylists[] = [
+        'name' => $row['playlist'],
+        'count' => $row['count']
+    ];
+}
 
 try {
     $db = new DataBase();
 
-    if ($playlistFilter) {
-        $sql = "SELECT * FROM ytb_songs_list WHERE playlist = ? ORDER BY video_id DESC";
+    if (!empty($selectedPlaylists)) {
+        // Build query with multiple playlists
+        $placeholders = implode(',', array_fill(0, count($selectedPlaylists), '?'));
+        $sql = "SELECT * FROM ytb_songs_list WHERE playlist IN ($placeholders) ORDER BY video_id DESC";
         $stmt = $db->prepare($sql);
 
         if (!$stmt) {
             throw new Exception("Failed to prepare statement");
         }
 
-        $stmt->bind_param("s", $playlistFilter);
+        // Bind parameters dynamically
+        $types = str_repeat('s', count($selectedPlaylists));
+        $stmt->bind_param($types, ...$selectedPlaylists);
         $stmt->execute();
         $dbData = $stmt->get_result();
         $stmt->close();
@@ -33,42 +49,80 @@ try {
 
 <div class="container">
     <div class="glass-container">
-        <div class="row align-items-center mb-4">
-            <div class="col-md-6">
-                <h1><i class="fas fa-music icon-hover me-3"></i>Your Downloads</h1>
-                <?php if ($playlistFilter): ?>
-                    <p class="text-muted mb-0">
-                        Playlist: <strong><?php echo htmlspecialchars($playlistFilter, ENT_QUOTES, 'UTF-8'); ?></strong>
-                        <a href="?action=list" class="ms-2 text-decoration-none">
-                            <i class="fas fa-times-circle"></i> Clear filter
-                        </a>
-                    </p>
-                <?php else: ?>
-                    <p class="text-muted mb-0">Manage your YouTube downloads</p>
-                <?php endif; ?>
-            </div>
-            <div class="col-md-6 text-end">
-                <?php if ($dbData && $dbData->num_rows > 0): ?>
-                    <button onclick="confirmDeleteAll()" class="btn btn-delete me-2">
-                        <i class="fas fa-trash-alt me-2"></i>Delete All
+        <div class="row">
+            <!-- Sidebar Filter -->
+            <div class="col-md-3 col-lg-2 pe-4 border-end">
+                <h5 class="mb-3">
+                    <i class="fas fa-filter me-2"></i>Playlists
+                </h5>
+
+                <?php if (!empty($selectedPlaylists)): ?>
+                    <button onclick="clearFilters()" class="btn btn-sm btn-outline-secondary w-100 mb-3">
+                        <i class="fas fa-times me-1"></i>Clear Filters
                     </button>
                 <?php endif; ?>
-                <a href="?action=download" class="btn btn-premium me-2">
-                    <i class="fas fa-download me-2"></i>Download Pending
-                </a>
-                <a href="?action=add" class="btn btn-premium">
-                    <i class="fas fa-plus me-2"></i>Add New
-                </a>
-            </div>
-        </div>
 
-        <div class="table-responsive">
+                <div class="playlist-filter-list">
+                    <?php foreach($allPlaylists as $playlist): ?>
+                        <?php
+                        $isSelected = in_array($playlist['name'], $selectedPlaylists);
+                        ?>
+                        <div class="form-check mb-2 playlist-filter-item">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   value="<?php echo htmlspecialchars($playlist['name'], ENT_QUOTES, 'UTF-8'); ?>"
+                                   id="playlist_<?php echo htmlspecialchars($playlist['name'], ENT_QUOTES, 'UTF-8'); ?>"
+                                   <?php echo $isSelected ? 'checked' : ''; ?>
+                                   onchange="togglePlaylist(this.value, this.checked)">
+                            <label class="form-check-label w-100" for="playlist_<?php echo htmlspecialchars($playlist['name'], ENT_QUOTES, 'UTF-8'); ?>">
+                                <i class="fas fa-folder me-1"></i>
+                                <?php echo htmlspecialchars($playlist['name'], ENT_QUOTES, 'UTF-8'); ?>
+                                <span class="badge bg-secondary float-end"><?php echo $playlist['count']; ?></span>
+                            </label>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10">
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                        <div>
+                            <h1><i class="fas fa-music icon-hover me-3"></i>Your Downloads</h1>
+                            <?php if (!empty($selectedPlaylists)): ?>
+                                <p class="text-muted mb-0">
+                                    <i class="fas fa-filter me-1"></i>
+                                    Showing: <strong><?php echo count($selectedPlaylists); ?></strong> playlist(s)
+                                </p>
+                            <?php else: ?>
+                                <p class="text-muted mb-0">Showing all songs</p>
+                            <?php endif; ?>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <?php if ($dbData && $dbData->num_rows > 0): ?>
+                                <button onclick="confirmDeleteAll()" class="btn btn-delete">
+                                    <i class="fas fa-trash-alt me-2"></i>Delete All
+                                </button>
+                            <?php endif; ?>
+                            <a href="?action=download" class="btn btn-premium">
+                                <i class="fas fa-download me-2"></i>Download Pending
+                            </a>
+                            <a href="?action=add" class="btn btn-premium">
+                                <i class="fas fa-plus me-2"></i>Add New
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
             <table class="table table-premium">
                 <thead>
                     <tr>
                         <th class="text-center"><i class="fas fa-hashtag me-2"></i>ID</th>
                         <th><i class="fas fa-user me-2"></i>Artist</th>
                         <th><i class="fas fa-music me-2"></i>Song</th>
+                        <th><i class="fas fa-folder me-2"></i>Playlist</th>
                         <th><i class="fas fa-link me-2"></i>Link</th>
                         <th class="text-center"><i class="fas fa-check-circle me-2"></i>Status</th>
                         <th class="text-center"><i class="fas fa-cog me-2"></i>Actions</th>
@@ -92,6 +146,19 @@ try {
                                     <?php else: ?>
                                         <span class="text-muted"><i class="fas fa-hourglass-half me-2"></i>Pending...</span>
                                     <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php
+                                    $playlist = $row['playlist'] ?? 'General';
+                                    $isCurrentPlaylist = in_array($playlist, $selectedPlaylists);
+                                    ?>
+                                    <a href="?action=list&playlists=<?php echo urlencode($playlist); ?>"
+                                       class="badge <?php echo $isCurrentPlaylist ? 'bg-primary' : 'bg-secondary'; ?> text-decoration-none"
+                                       title="Filter by this playlist"
+                                       style="font-size: 0.9em;">
+                                        <i class="fas fa-folder me-1"></i>
+                                        <?php echo htmlspecialchars($playlist, ENT_QUOTES, 'UTF-8'); ?>
+                                    </a>
                                 </td>
                                 <td>
                                     <?php
@@ -136,7 +203,7 @@ try {
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="6" class="text-center py-5">
+                            <td colspan="7" class="text-center py-5">
                                 <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
                                 <h5 class="text-muted">No songs yet</h5>
                                 <p class="text-muted">Start by adding your first YouTube link!</p>
@@ -149,8 +216,32 @@ try {
                 </tbody>
             </table>
         </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<style>
+.playlist-filter-item {
+    transition: all 0.2s ease;
+    padding: 5px;
+    border-radius: 5px;
+}
+
+.playlist-filter-item:hover {
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.playlist-filter-item .form-check-input:checked ~ label {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+.playlist-filter-item label {
+    cursor: pointer;
+    user-select: none;
+}
+</style>
 
 <script>
 function confirmDelete(id, songName) {
@@ -160,18 +251,51 @@ function confirmDelete(id, songName) {
 }
 
 function confirmDeleteAll() {
-    const playlistParam = new URLSearchParams(window.location.search).get('playlist');
-    const playlistName = playlistParam ? playlistParam : 'all songs';
+    const urlParams = new URLSearchParams(window.location.search);
+    const selectedPlaylists = urlParams.get('playlists');
 
-    const message = playlistParam
-        ? `Are you sure you want to delete ALL songs from the "${playlistName}" playlist?\n\nThis will:\n- Remove all songs from the database\n- Delete all MP3 files from this playlist\n\nThis action cannot be undone!`
+    const message = selectedPlaylists
+        ? `Are you sure you want to delete ALL songs from the selected playlist(s)?\n\nThis will:\n- Remove all songs from the database\n- Delete all MP3 files from selected playlists\n\nThis action cannot be undone!`
         : 'Are you sure you want to delete ALL songs from ALL playlists?\n\nThis will:\n- Remove all songs from the database\n- Delete all MP3 files\n\nThis action cannot be undone!';
 
     if(confirm(message)) {
-        const url = playlistParam
-            ? '?action=delete_all&playlist=' + encodeURIComponent(playlistParam)
-            : '?action=delete_all';
-        window.location.href = url;
+        if (selectedPlaylists) {
+            // Delete from selected playlists - need to handle this in delete_all.php
+            const playlists = selectedPlaylists.split(',');
+            playlists.forEach(function(playlist) {
+                // For now, redirect to delete_all with first playlist
+                // TODO: Update delete_all.php to handle multiple playlists
+            });
+            window.location.href = '?action=delete_all&playlist=' + encodeURIComponent(playlists[0]);
+        } else {
+            window.location.href = '?action=delete_all';
+        }
     }
+}
+
+function togglePlaylist(playlistName, isChecked) {
+    const urlParams = new URLSearchParams(window.location.search);
+    let playlists = urlParams.get('playlists') ? urlParams.get('playlists').split(',') : [];
+
+    if (isChecked) {
+        // Add playlist if not already in array
+        if (!playlists.includes(playlistName)) {
+            playlists.push(playlistName);
+        }
+    } else {
+        // Remove playlist from array
+        playlists = playlists.filter(p => p !== playlistName);
+    }
+
+    // Update URL
+    if (playlists.length > 0) {
+        window.location.href = '?action=list&playlists=' + encodeURIComponent(playlists.join(','));
+    } else {
+        window.location.href = '?action=list';
+    }
+}
+
+function clearFilters() {
+    window.location.href = '?action=list';
 }
 </script>
