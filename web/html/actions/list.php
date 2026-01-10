@@ -3,6 +3,16 @@
 $selectedPlaylists = isset($_GET['playlists']) ? explode(',', $_GET['playlists']) : [];
 $selectedPlaylists = array_filter($selectedPlaylists); // Remove empty values
 
+// Pagination parameters
+$itemsPerPageOptions = [5, 10, 15, 20, 25];
+$itemsPerPage = isset($_GET['per_page']) && in_array((int)$_GET['per_page'], $itemsPerPageOptions)
+    ? (int)$_GET['per_page']
+    : 10; // Default to 10
+$currentPage = isset($_GET['page']) && is_numeric($_GET['page']) && $_GET['page'] > 0
+    ? (int)$_GET['page']
+    : 1;
+$offset = ($currentPage - 1) * $itemsPerPage;
+
 try {
     // Single database connection for all queries
     $db = new DataBase();
@@ -26,34 +36,57 @@ try {
         $pendingCount = (int)$pendingRow['pending_count'];
     }
 
+    // Get total count for pagination
     if (!empty($selectedPlaylists)) {
-        // Build query with multiple playlists
         $placeholders = implode(',', array_fill(0, count($selectedPlaylists), '?'));
-        $sql = "SELECT * FROM ytb_songs_list WHERE playlist IN ($placeholders) ORDER BY video_id DESC";
+        $countSql = "SELECT COUNT(*) as total FROM ytb_songs_list WHERE playlist IN ($placeholders)";
+        $countStmt = $db->prepare($countSql);
+        $types = str_repeat('s', count($selectedPlaylists));
+        $countStmt->bind_param($types, ...$selectedPlaylists);
+        $countStmt->execute();
+        $countResult = $countStmt->get_result();
+        $totalRows = $countResult->fetch_assoc()['total'];
+        $countStmt->close();
+    } else {
+        $countSql = "SELECT COUNT(*) as total FROM ytb_songs_list";
+        $countResult = $db->query($countSql);
+        $totalRows = $countResult->fetch_assoc()['total'];
+    }
+
+    $totalPages = ceil($totalRows / $itemsPerPage);
+
+    // Get paginated data
+    if (!empty($selectedPlaylists)) {
+        // Build query with multiple playlists and pagination
+        $placeholders = implode(',', array_fill(0, count($selectedPlaylists), '?'));
+        $sql = "SELECT * FROM ytb_songs_list WHERE playlist IN ($placeholders) ORDER BY video_id DESC LIMIT ? OFFSET ?";
         $stmt = $db->prepare($sql);
 
         if (!$stmt) {
             throw new Exception("Failed to prepare statement");
         }
 
-        // Bind parameters dynamically
-        $types = str_repeat('s', count($selectedPlaylists));
-        $stmt->bind_param($types, ...$selectedPlaylists);
+        // Bind parameters dynamically (playlists + limit + offset)
+        $types = str_repeat('s', count($selectedPlaylists)) . 'ii';
+        $params = array_merge($selectedPlaylists, [$itemsPerPage, $offset]);
+        $stmt->bind_param($types, ...$params);
         $stmt->execute();
         $dbData = $stmt->get_result();
         $stmt->close();
     } else {
-        $sql = "SELECT * FROM ytb_songs_list ORDER BY video_id DESC";
-        $dbData = $db->query($sql);
-
-        if (!$dbData) {
-            throw new Exception("Failed to execute query");
-        }
+        $sql = "SELECT * FROM ytb_songs_list ORDER BY video_id DESC LIMIT ? OFFSET ?";
+        $stmt = $db->prepare($sql);
+        $stmt->bind_param('ii', $itemsPerPage, $offset);
+        $stmt->execute();
+        $dbData = $stmt->get_result();
+        $stmt->close();
     }
 } catch (Exception $e) {
     error_log("Database error in list.php: " . $e->getMessage());
     $dbData = null;
     $pendingCount = 0;
+    $totalRows = 0;
+    $totalPages = 0;
 }
 ?>
 
@@ -130,6 +163,27 @@ try {
                         </div>
                     </div>
                 </div>
+
+                <!-- Pagination Controls - Top -->
+                <?php if ($totalRows > 0): ?>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="text-muted">
+                        Showing <strong><?php echo min($offset + 1, $totalRows); ?></strong> to
+                        <strong><?php echo min($offset + $itemsPerPage, $totalRows); ?></strong> of
+                        <strong><?php echo $totalRows; ?></strong> songs
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="perPageSelect" class="mb-0 text-muted small">Items per page:</label>
+                        <select id="perPageSelect" class="form-select form-select-sm" style="width: auto;" onchange="changeItemsPerPage(this.value)">
+                            <?php foreach($itemsPerPageOptions as $option): ?>
+                                <option value="<?php echo $option; ?>" <?php echo $option === $itemsPerPage ? 'selected' : ''; ?>>
+                                    <?php echo $option; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <?php endif; ?>
 
                 <div class="table-responsive">
             <table class="table table-premium">
@@ -232,10 +286,76 @@ try {
                 </tbody>
             </table>
         </div>
+
+        <!-- Pagination Controls - Bottom -->
+        <?php if ($totalPages > 1): ?>
+        <div class="d-flex justify-content-center mt-4">
+            <nav aria-label="Page navigation">
+                <ul class="pagination pagination-premium">
+                    <!-- Previous Button -->
+                    <li class="page-item <?php echo $currentPage <= 1 ? 'disabled' : ''; ?>">
+                        <a class="page-link page-nav-btn" href="<?php echo $currentPage > 1 ? buildPaginationUrl($currentPage - 1, $itemsPerPage, $selectedPlaylists) : '#'; ?>" aria-label="Previous">
+                            <i class="fas fa-chevron-left"></i> <span class="d-none d-md-inline">Previous</span>
+                        </a>
+                    </li>
+
+                    <?php
+                    // Calculate page range to display
+                    $range = 2; // Pages to show on each side of current page
+                    $startPage = max(1, $currentPage - $range);
+                    $endPage = min($totalPages, $currentPage + $range);
+
+                    // Show first page if not in range
+                    if ($startPage > 1) {
+                        echo '<li class="page-item"><a class="page-link page-number" href="' . buildPaginationUrl(1, $itemsPerPage, $selectedPlaylists) . '">1</a></li>';
+                        if ($startPage > 2) {
+                            echo '<li class="page-item disabled"><span class="page-link page-dots">...</span></li>';
+                        }
+                    }
+
+                    // Show page numbers in range
+                    for ($i = $startPage; $i <= $endPage; $i++) {
+                        $activeClass = $i === $currentPage ? 'active' : '';
+                        echo '<li class="page-item ' . $activeClass . '">';
+                        echo '<a class="page-link page-number" href="' . buildPaginationUrl($i, $itemsPerPage, $selectedPlaylists) . '">' . $i . '</a>';
+                        echo '</li>';
+                    }
+
+                    // Show last page if not in range
+                    if ($endPage < $totalPages) {
+                        if ($endPage < $totalPages - 1) {
+                            echo '<li class="page-item disabled"><span class="page-link page-dots">...</span></li>';
+                        }
+                        echo '<li class="page-item"><a class="page-link page-number" href="' . buildPaginationUrl($totalPages, $itemsPerPage, $selectedPlaylists) . '">' . $totalPages . '</a></li>';
+                    }
+                    ?>
+
+                    <!-- Next Button -->
+                    <li class="page-item <?php echo $currentPage >= $totalPages ? 'disabled' : ''; ?>">
+                        <a class="page-link page-nav-btn" href="<?php echo $currentPage < $totalPages ? buildPaginationUrl($currentPage + 1, $itemsPerPage, $selectedPlaylists) : '#'; ?>" aria-label="Next">
+                            <span class="d-none d-md-inline">Next</span> <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+        <?php endif; ?>
+
             </div>
         </div>
     </div>
 </div>
+
+<?php
+// Helper function to build pagination URLs
+function buildPaginationUrl($page, $perPage, $playlists) {
+    $params = ['action' => 'list', 'page' => $page, 'per_page' => $perPage];
+    if (!empty($playlists)) {
+        $params['playlists'] = implode(',', $playlists);
+    }
+    return '?' . http_build_query($params);
+}
+?>
 
 <style>
 .playlist-filter-item {
@@ -256,6 +376,94 @@ try {
 .playlist-filter-item label {
     cursor: pointer;
     user-select: none;
+}
+
+/* Pagination Styles */
+.pagination-premium {
+    margin: 0;
+    gap: 5px;
+}
+
+/* Base page link styles */
+.pagination-premium .page-link {
+    border: none;
+    margin: 0;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+/* Page number buttons (1, 2, 3, etc.) */
+.pagination-premium .page-number {
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.pagination-premium .page-number:hover {
+    background: var(--gradient);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.pagination-premium .page-item.active .page-number {
+    background: var(--gradient);
+    color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Previous/Next navigation buttons */
+.pagination-premium .page-nav-btn {
+    border-radius: 50px;
+    padding: 10px 20px;
+    color: var(--primary);
+    background: rgba(102, 126, 234, 0.1);
+    font-weight: 600;
+    min-width: 50px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pagination-premium .page-nav-btn:hover {
+    background: var(--gradient);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Dots (...) */
+.pagination-premium .page-dots {
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: #999;
+    cursor: default;
+}
+
+/* Disabled state */
+.pagination-premium .page-item.disabled .page-link {
+    background: rgba(0, 0, 0, 0.05);
+    color: #999;
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.pagination-premium .page-item.disabled .page-link:hover {
+    transform: none;
+    box-shadow: none;
+    background: rgba(0, 0, 0, 0.05);
 }
 </style>
 
@@ -342,5 +550,12 @@ function togglePlaylist(playlistName, isChecked) {
 
 function clearFilters() {
     window.location.href = '?action=list';
+}
+
+function changeItemsPerPage(perPage) {
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('per_page', perPage);
+    urlParams.set('page', '1'); // Reset to first page when changing items per page
+    window.location.href = '?' + urlParams.toString();
 }
 </script>
