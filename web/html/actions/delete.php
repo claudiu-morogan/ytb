@@ -1,8 +1,18 @@
 <?php
-if(isset($_GET['id']) && is_numeric($_GET['id'])) {
-    $video_id = intval($_GET['id']);
-    $song = new Song();
+// Accept both POST (with CSRF) and GET (backwards compatibility for now)
+$isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
 
+if ($isPost) {
+    // Validate CSRF token for POST requests
+    Csrf::validateOrDie();
+    $video_id = isset($_POST['id']) && is_numeric($_POST['id']) ? intval($_POST['id']) : null;
+} else {
+    // GET request (backwards compatibility)
+    $video_id = isset($_GET['id']) && is_numeric($_GET['id']) ? intval($_GET['id']) : null;
+}
+
+if($video_id) {
+    $song = new Song();
     $result = $song->deleteSong($video_id);
 
     if($result === true) {

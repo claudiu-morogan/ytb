@@ -111,7 +111,25 @@ function confirmDeletePlaylist(playlistName, songCount) {
     const message = `Are you sure you want to delete the playlist "${playlistName}"?\n\nThis will:\n- Delete ${songCount} song(s) from the database\n- Remove all MP3 files from this playlist\n- Delete the playlist folder\n\nThis action cannot be undone!`;
 
     if(confirm(message)) {
-        window.location.href = '?action=delete_playlist&playlist=' + encodeURIComponent(playlistName);
+        // Create and submit a hidden form with CSRF token
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '?action=delete_playlist';
+
+        const playlistInput = document.createElement('input');
+        playlistInput.type = 'hidden';
+        playlistInput.name = 'playlist';
+        playlistInput.value = playlistName;
+        form.appendChild(playlistInput);
+
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = '<?php echo Csrf::generateToken(); ?>';
+        form.appendChild(csrfInput);
+
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 </script>

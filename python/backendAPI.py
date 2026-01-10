@@ -18,6 +18,34 @@ def trigger_downloads():
         resp = 'error'
     return resp
 
+@app.get("/get-metadata")
+def get_metadata(url: str):
+    """
+    Extract metadata (artist, title) from YouTube URL without downloading
+    """
+    try:
+        from pytubefix import YouTube
+
+        yt = YouTube(url)
+
+        # Get metadata
+        artist = getattr(yt, 'author', None) or getattr(yt, 'channel_name', 'Unknown Artist')
+        title = getattr(yt, 'title', 'Unknown Title')
+
+        logger.info(f"Successfully extracted metadata: {artist} - {title}")
+
+        return {
+            "status": "success",
+            "artist": artist,
+            "title": title
+        }
+    except Exception as e:
+        logger.error(f"Error extracting metadata from {url}: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 @app.delete("/delete-song/{video_id}")
 def delete_song(video_id: int):
     """

@@ -1,5 +1,15 @@
 <?php
-$playlistFilter = isset($_GET['playlist']) ? $_GET['playlist'] : null;
+// Accept both POST (with CSRF) and GET (backwards compatibility)
+$isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
+
+if ($isPost) {
+    // Validate CSRF token for POST requests
+    Csrf::validateOrDie();
+    $playlistFilter = isset($_POST['playlist']) ? $_POST['playlist'] : null;
+} else {
+    // GET request (backwards compatibility)
+    $playlistFilter = isset($_GET['playlist']) ? $_GET['playlist'] : null;
+}
 
 try {
     $db = new DataBase();

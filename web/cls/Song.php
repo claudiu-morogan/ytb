@@ -31,13 +31,50 @@ class Song extends DataBase
             return $message;
         }
 
+        // Step 1: Insert link into database
         $stmt = $this->connection->prepare("INSERT INTO ytb_downloads (link, playlist) VALUES (?, ?)");
         $playlist = trim($data['playlist'] ?? 'General');
         $stmt->bind_param("ss", $link, $playlist);
         $stmt->execute();
+        $video_id = $this->connection->insert_id;
         $stmt->close();
 
-        $message = ['success' => 'New record created successfully'];
+        // Step 2: Fetch metadata from Python API
+        $apiUrl = 'http://ytb_python:353/get-metadata?url=' . urlencode($link);
+
+        $ch = curl_init($apiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlError || $httpCode !== 200) {
+            error_log("Failed to fetch metadata: " . ($curlError ?: "HTTP $httpCode"));
+            $message = ['warning' => 'Song added but metadata fetch failed. Will retry on download.'];
+            return $message;
+        }
+
+        $metadata = json_decode($response, true);
+
+        if ($metadata && isset($metadata['status']) && $metadata['status'] === 'success') {
+            // Step 3: Store metadata in ytb_song_details
+            $artist = $metadata['artist'];
+            $title = $metadata['title'];
+
+            $stmt = $this->connection->prepare("INSERT INTO ytb_song_details (video_id, artist, song) VALUES (?, ?, ?)");
+            $stmt->bind_param("iss", $video_id, $artist, $title);
+            $stmt->execute();
+            $stmt->close();
+
+            $message = ['success' => "Added: $artist - $title"];
+        } else {
+            error_log("Metadata API returned error: " . ($metadata['message'] ?? 'Unknown error'));
+            $message = ['warning' => 'Song added but metadata extraction failed. Will retry on download.'];
+        }
 
         return $message;
 

@@ -1,10 +1,20 @@
 <?php
-if (!isset($_GET['playlist']) || empty($_GET['playlist'])) {
+// Accept both POST (with CSRF) and GET (backwards compatibility)
+$isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
+
+if ($isPost) {
+    // Validate CSRF token for POST requests
+    Csrf::validateOrDie();
+    $playlistName = isset($_POST['playlist']) ? $_POST['playlist'] : null;
+} else {
+    // GET request (backwards compatibility)
+    $playlistName = isset($_GET['playlist']) ? $_GET['playlist'] : null;
+}
+
+if (!$playlistName || empty($playlistName)) {
     header('Location: ?action=playlists');
     exit;
 }
-
-$playlistName = $_GET['playlist'];
 
 // Prevent deletion of General playlist
 if ($playlistName === 'General') {

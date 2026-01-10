@@ -1,16 +1,11 @@
 <?php
 $showNotificationClass = 'none';
 
-// Get existing playlists
-$dbPlaylists = new DataBase();
-$playlistsResult = $dbPlaylists->query("SELECT DISTINCT playlist FROM ytb_downloads ORDER BY playlist");
-$existingPlaylists = [];
-foreach($playlistsResult as $row) {
-    $existingPlaylists[] = $row['playlist'];
-}
-
 if($_POST && isset($_POST['link']))
 {
+    // Validate CSRF token
+    Csrf::validateOrDie();
+
     $showNotificationClass = 'block';
     $db = new Song();
     $data = array(
@@ -18,6 +13,15 @@ if($_POST && isset($_POST['link']))
         'playlist' => $_POST['playlist'] ?? 'General'
     );
     $status = $db->addSong($data);
+    // Note: Song class already handles its own database connection
+}
+
+// Get existing playlists (after adding song to include newly created playlists)
+$db = new DataBase();
+$playlistsResult = $db->query("SELECT DISTINCT playlist FROM ytb_downloads ORDER BY playlist");
+$existingPlaylists = [];
+foreach($playlistsResult as $row) {
+    $existingPlaylists[] = $row['playlist'];
 }
 ?>
 
@@ -39,6 +43,7 @@ if($_POST && isset($_POST['link']))
         <?php endif; ?>
 
         <form action="<?=$_SERVER['REQUEST_URI']?>" method="POST" id="addSongForm">
+            <?php echo Csrf::getTokenField(); ?>
             <div class="row justify-content-center">
                 <div class="col-md-8">
                     <div class="mb-4">
@@ -89,7 +94,7 @@ if($_POST && isset($_POST['link']))
                                    id="playlist"
                                    class="form-control form-control-premium"
                                    placeholder="Type new playlist name"
-                                   value="General"
+                                   value="<?php echo isset($_POST['playlist']) ? htmlspecialchars($_POST['playlist'], ENT_QUOTES, 'UTF-8') : 'General'; ?>"
                                    list="playlistOptions">
                             <button type="button" class="btn btn-outline-secondary" onclick="clearPlaylist()" title="Clear and create new">
                                 <i class="fas fa-times"></i>

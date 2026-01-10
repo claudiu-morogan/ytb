@@ -14,18 +14,31 @@ def download():
         dbConnection = dbConnect()
 
         cursor = dbConnection.cursor()
-        cursor.execute("SELECT link, video_id, COALESCE(playlist, 'General') as playlist FROM ytb_downloads WHERE downloaded=0")
+        # Join with ytb_song_details to get pre-stored metadata
+        cursor.execute("""
+            SELECT yd.link, yd.video_id, COALESCE(yd.playlist, 'General') as playlist,
+                   ysd.artist, ysd.song
+            FROM ytb_downloads yd
+            LEFT JOIN ytb_song_details ysd ON yd.video_id = ysd.video_id
+            WHERE yd.downloaded=0
+        """)
 
         result = cursor.fetchall()
         if cursor.rowcount != 0:
             for row in result:
-                (url, video_id, playlist) = (row[0], row[1], row[2])
+                (url, video_id, playlist, artist, title) = (row[0], row[1], row[2], row[3], row[4])
                 try:
                     yt = YouTube(url)
 
-                    # Get metadata - try different property names for compatibility
-                    artist = getattr(yt, 'author', None) or getattr(yt, 'channel_name', 'Unknown Artist')
-                    title = getattr(yt, 'title', 'Unknown Title')
+                    # If metadata wasn't fetched during add (backwards compatibility fallback)
+                    if not artist or not title:
+                        logger.info(f"Metadata missing for video_id {video_id}, fetching now...")
+                        artist = getattr(yt, 'author', None) or getattr(yt, 'channel_name', 'Unknown Artist')
+                        title = getattr(yt, 'title', 'Unknown Title')
+                        # Store the metadata for next time
+                        updateSongDetails(artist, title, video_id)
+                    else:
+                        logger.info(f"Using pre-stored metadata: {artist} - {title}")
 
                     songName = f"{artist}_{title}"
                     logger.info(f"Processing: {songName}")
@@ -45,7 +58,6 @@ def download():
 
                     # Update database
                     setVideoToDownloaded(video_id, cursor, dbConnection)
-                    updateSongDetails(artist, title, video_id)
                     logger.info(f"Successfully processed: {songName}")
                 except Exception as e:
                     logger.error(f"Failed to download video {video_id} from {url}: {str(e)}", exc_info=True)

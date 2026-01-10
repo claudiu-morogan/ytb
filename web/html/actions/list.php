@@ -3,19 +3,28 @@
 $selectedPlaylists = isset($_GET['playlists']) ? explode(',', $_GET['playlists']) : [];
 $selectedPlaylists = array_filter($selectedPlaylists); // Remove empty values
 
-// Get all playlists with song counts
-$dbPlaylists = new DataBase();
-$playlistsResult = $dbPlaylists->query("SELECT playlist, COUNT(*) as count FROM ytb_downloads GROUP BY playlist ORDER BY playlist");
-$allPlaylists = [];
-foreach($playlistsResult as $row) {
-    $allPlaylists[] = [
-        'name' => $row['playlist'],
-        'count' => $row['count']
-    ];
-}
-
 try {
+    // Single database connection for all queries
     $db = new DataBase();
+
+    // Get all playlists with song counts
+    $playlistsResult = $db->query("SELECT playlist, COUNT(*) as count FROM ytb_downloads GROUP BY playlist ORDER BY playlist");
+    $allPlaylists = [];
+    foreach($playlistsResult as $row) {
+        $allPlaylists[] = [
+            'name' => $row['playlist'],
+            'count' => $row['count']
+        ];
+    }
+
+    // Get pending count for badge
+    $pendingCountQuery = "SELECT COUNT(*) as pending_count FROM ytb_downloads WHERE downloaded=0";
+    $pendingResult = $db->query($pendingCountQuery);
+    $pendingCount = 0;
+    if ($pendingResult && $pendingResult->num_rows > 0) {
+        $pendingRow = $pendingResult->fetch_assoc();
+        $pendingCount = (int)$pendingRow['pending_count'];
+    }
 
     if (!empty($selectedPlaylists)) {
         // Build query with multiple playlists
@@ -44,6 +53,7 @@ try {
 } catch (Exception $e) {
     error_log("Database error in list.php: " . $e->getMessage());
     $dbData = null;
+    $pendingCount = 0;
 }
 ?>
 
@@ -105,8 +115,14 @@ try {
                                     <i class="fas fa-trash-alt me-2"></i>Delete All
                                 </button>
                             <?php endif; ?>
-                            <a href="?action=download" class="btn btn-premium">
+                            <a href="?action=download" class="btn btn-premium position-relative">
                                 <i class="fas fa-download me-2"></i>Download Pending
+                                <?php if ($pendingCount > 0): ?>
+                                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                        <?php echo $pendingCount; ?>
+                                        <span class="visually-hidden">pending songs</span>
+                                    </span>
+                                <?php endif; ?>
                             </a>
                             <a href="?action=add" class="btn btn-premium">
                                 <i class="fas fa-plus me-2"></i>Add New
@@ -246,7 +262,25 @@ try {
 <script>
 function confirmDelete(id, songName) {
     if(confirm('Are you sure you want to delete "' + songName + '"?\n\nThis will remove the song from the database and delete the MP3 file.')) {
-        window.location.href = '?action=delete&id=' + id;
+        // Create and submit a hidden form with CSRF token
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '?action=delete';
+
+        const idInput = document.createElement('input');
+        idInput.type = 'hidden';
+        idInput.name = 'id';
+        idInput.value = id;
+        form.appendChild(idInput);
+
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = '<?php echo Csrf::generateToken(); ?>';
+        form.appendChild(csrfInput);
+
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 
@@ -259,17 +293,28 @@ function confirmDeleteAll() {
         : 'Are you sure you want to delete ALL songs from ALL playlists?\n\nThis will:\n- Remove all songs from the database\n- Delete all MP3 files\n\nThis action cannot be undone!';
 
     if(confirm(message)) {
+        // Create and submit a hidden form with CSRF token
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '?action=delete_all';
+
         if (selectedPlaylists) {
-            // Delete from selected playlists - need to handle this in delete_all.php
             const playlists = selectedPlaylists.split(',');
-            playlists.forEach(function(playlist) {
-                // For now, redirect to delete_all with first playlist
-                // TODO: Update delete_all.php to handle multiple playlists
-            });
-            window.location.href = '?action=delete_all&playlist=' + encodeURIComponent(playlists[0]);
-        } else {
-            window.location.href = '?action=delete_all';
+            const playlistInput = document.createElement('input');
+            playlistInput.type = 'hidden';
+            playlistInput.name = 'playlist';
+            playlistInput.value = playlists[0]; // For now, just handle first playlist
+            form.appendChild(playlistInput);
         }
+
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = '<?php echo Csrf::generateToken(); ?>';
+        form.appendChild(csrfInput);
+
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 
