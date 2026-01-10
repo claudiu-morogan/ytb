@@ -85,6 +85,58 @@ class Song extends DataBase
 
     }
 
+    public function moveSong($video_id, $new_playlist)
+    {
+        // Call Python API to handle move (database + file)
+        $apiUrl = 'http://ytb_python:353/move-song/' . intval($video_id) . '?new_playlist=' . urlencode($new_playlist);
+
+        // Initialize cURL
+        $ch = curl_init($apiUrl);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+
+        // Execute request
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        // Handle cURL errors
+        if ($curlError) {
+            $errorMsg = "Failed to connect to Python API: " . $curlError;
+            error_log($errorMsg);
+            return $errorMsg;
+        }
+
+        // Log response for debugging
+        error_log("Move API Response: HTTP $httpCode - " . $response);
+
+        // Parse response
+        if ($httpCode === 200) {
+            $result = json_decode($response, true);
+            if ($result && isset($result['status'])) {
+                if ($result['status'] === 'success') {
+                    error_log("Successfully moved song via API: " . $result['message']);
+                    return true;
+                } else {
+                    $errorMsg = $result['message'] ?? 'Unknown error from API';
+                    error_log("API returned error: " . $errorMsg);
+                    return $errorMsg;
+                }
+            } else {
+                $errorMsg = "Invalid response from API: " . $response;
+                error_log($errorMsg);
+                return $errorMsg;
+            }
+        } else {
+            $errorMsg = "API returned HTTP code $httpCode: " . $response;
+            error_log($errorMsg);
+            return $errorMsg;
+        }
+    }
+
     public function deleteSong($video_id)
     {
         // Call Python API to handle deletion (database + file)

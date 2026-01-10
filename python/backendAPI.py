@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from main import *
-from funcs import deleteSong, cleanupEmptyPlaylists
+from funcs import deleteSong, cleanupEmptyPlaylists, moveSong
 import logging
 
 app = FastAPI()
@@ -45,6 +45,24 @@ def get_metadata(url: str):
             "status": "error",
             "message": str(e)
         }
+
+@app.put("/move-song/{video_id}")
+def move_song(video_id: int, new_playlist: str):
+    """
+    Move a song from one playlist to another
+    Updates database and moves MP3 file if it exists
+    """
+    try:
+        success = moveSong(video_id, new_playlist)
+        if success:
+            # Clean up empty playlists after moving
+            cleanupEmptyPlaylists()
+            return {"status": "success", "message": f"Song {video_id} moved to {new_playlist}"}
+        else:
+            return {"status": "error", "message": f"Song {video_id} not found or move failed"}
+    except Exception as e:
+        logger.error(f"Error moving song {video_id}: {str(e)}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 @app.delete("/delete-song/{video_id}")
 def delete_song(video_id: int):

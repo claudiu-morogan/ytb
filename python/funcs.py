@@ -121,6 +121,122 @@ def cleanupEmptyPlaylists():
     return len(removed_folders)
 
 
+def moveSong(video_id, new_playlist):
+    """
+    Move a song from one playlist to another
+    Updates database and moves MP3 file if downloaded
+    """
+    import logging
+    import shutil
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"=== Starting move operation for video_id: {video_id} to playlist: {new_playlist} ===")
+
+    dbConnection = dbConnect()
+    cursor = dbConnection.cursor()
+
+    try:
+        # Get current song details
+        sql = """
+            SELECT ysd.artist, ysd.song, yd.playlist, yd.downloaded
+            FROM ytb_downloads yd
+            LEFT JOIN ytb_song_details ysd ON yd.video_id = ysd.video_id
+            WHERE yd.video_id = %s
+        """
+        cursor.execute(sql, (str(video_id),))
+        result = cursor.fetchone()
+
+        if not result:
+            logger.warning(f"Song with video_id {video_id} not found in database")
+            return False
+
+        artist, song, old_playlist, downloaded = result
+        old_playlist = old_playlist if old_playlist else 'General'
+        new_playlist = new_playlist if new_playlist else 'General'
+
+        logger.info(f"Found song - Artist: {artist}, Song: {song}, Current Playlist: {old_playlist}, Downloaded: {downloaded}")
+
+        # If it's the same playlist, no need to do anything
+        if old_playlist == new_playlist:
+            logger.info(f"Song is already in playlist {new_playlist}, no move needed")
+            return True
+
+        # Update database
+        sql = "UPDATE ytb_downloads SET playlist = %s WHERE video_id = %s"
+        cursor.execute(sql, (new_playlist, str(video_id)))
+        dbConnection.commit()
+        logger.info(f"Database updated: moved from {old_playlist} to {new_playlist}")
+
+        # Move MP3 file if song has been downloaded and we have artist/song info
+        if downloaded == 1 and artist and song:
+            mp3_base = os.path.join(downloadLocation(), 'mp3')
+
+            # Source and destination paths
+            old_playlist_path = os.path.join(mp3_base, old_playlist)
+            new_playlist_path = os.path.join(mp3_base, new_playlist)
+
+            # Create new playlist folder if it doesn't exist
+            os.makedirs(new_playlist_path, exist_ok=True)
+
+            logger.info(f"Searching for MP3 file in: {old_playlist_path}")
+
+            # Find the MP3 file
+            file_moved = False
+            if os.path.isdir(old_playlist_path):
+                files_in_dir = os.listdir(old_playlist_path)
+                mp3_files = [f for f in files_in_dir if f.endswith('.mp3')]
+                logger.info(f"Found {len(mp3_files)} MP3 files in {old_playlist_path}")
+
+                for filename in mp3_files:
+                    filename_lower = filename.lower()
+                    artist_lower = artist.lower() if artist else ""
+                    song_lower = song.lower() if song else ""
+
+                    # Normalize strings for matching
+                    def normalize_for_matching(s):
+                        return s.replace('/', '').replace('\\', '').replace(':', '').replace('|', '').replace('"', '').replace('*', '').replace('?', '').replace('<', '').replace('>', '')
+
+                    filename_normalized = normalize_for_matching(filename_lower)
+                    artist_normalized = normalize_for_matching(artist_lower)
+                    song_normalized = normalize_for_matching(song_lower)
+
+                    # Try to match the file
+                    match_both = artist_normalized and song_normalized and artist_normalized in filename_normalized and song_normalized in filename_normalized
+                    match_song_only = song_normalized and song_normalized in filename_normalized
+
+                    if match_both or match_song_only:
+                        old_file_path = os.path.join(old_playlist_path, filename)
+                        new_file_path = os.path.join(new_playlist_path, filename)
+
+                        logger.info(f"Moving file from {old_file_path} to {new_file_path}")
+
+                        try:
+                            shutil.move(old_file_path, new_file_path)
+                            logger.info(f"✓ Successfully moved MP3 file to {new_playlist}")
+                            file_moved = True
+                            break
+                        except Exception as e:
+                            logger.error(f"✗ Failed to move MP3 file: {str(e)}", exc_info=True)
+                            raise
+
+                if not file_moved:
+                    logger.warning(f"MP3 file not found for - Artist: '{artist}', Song: '{song}', Playlist: '{old_playlist}'")
+                    logger.warning("Note: Database was updated, but physical file was not found to move")
+            else:
+                logger.warning(f"Old playlist folder does not exist: {old_playlist_path}")
+
+        logger.info(f"=== Move operation completed for video_id: {video_id} ===")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error moving song {video_id}: {str(e)}", exc_info=True)
+        dbConnection.rollback()
+        return False
+    finally:
+        cursor.close()
+        dbConnection.close()
+
+
 def deleteSong(video_id):
     """
     Delete a song from database and remove MP3 file from filesystem

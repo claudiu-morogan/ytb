@@ -3,6 +3,18 @@
 $selectedPlaylists = isset($_GET['playlists']) ? explode(',', $_GET['playlists']) : [];
 $selectedPlaylists = array_filter($selectedPlaylists); // Remove empty values
 
+// Search parameters
+$searchQuery = isset($_GET['search']) ? trim($_GET['search']) : '';
+$searchField = isset($_GET['search_field']) && in_array($_GET['search_field'], ['artist', 'song', 'playlist', 'status'])
+    ? $_GET['search_field']
+    : 'all';
+
+// Sorting parameters
+$sortBy = isset($_GET['sort_by']) && in_array($_GET['sort_by'], ['video_id', 'artist', 'song', 'playlist', 'downloaded'])
+    ? $_GET['sort_by']
+    : 'video_id';
+$sortOrder = isset($_GET['sort_order']) && $_GET['sort_order'] === 'asc' ? 'ASC' : 'DESC';
+
 // Pagination parameters
 $itemsPerPageOptions = [5, 10, 15, 20, 25];
 $itemsPerPage = isset($_GET['per_page']) && in_array((int)$_GET['per_page'], $itemsPerPageOptions)
@@ -36,51 +48,77 @@ try {
         $pendingCount = (int)$pendingRow['pending_count'];
     }
 
-    // Get total count for pagination
+    // Build WHERE clause for search and filters
+    $whereClauses = [];
+    $params = [];
+    $types = '';
+
+    // Playlist filter
     if (!empty($selectedPlaylists)) {
         $placeholders = implode(',', array_fill(0, count($selectedPlaylists), '?'));
-        $countSql = "SELECT COUNT(*) as total FROM ytb_songs_list WHERE playlist IN ($placeholders)";
+        $whereClauses[] = "playlist IN ($placeholders)";
+        $params = array_merge($params, $selectedPlaylists);
+        $types .= str_repeat('s', count($selectedPlaylists));
+    }
+
+    // Search filter
+    if (!empty($searchQuery)) {
+        if ($searchField === 'all') {
+            $whereClauses[] = "(artist LIKE ? OR song LIKE ? OR playlist LIKE ?)";
+            $searchParam = '%' . $searchQuery . '%';
+            $params[] = $searchParam;
+            $params[] = $searchParam;
+            $params[] = $searchParam;
+            $types .= 'sss';
+        } elseif ($searchField === 'status') {
+            // Search by status (downloaded/pending)
+            $statusValue = (stripos($searchQuery, 'download') !== false) ? 1 : 0;
+            $whereClauses[] = "downloaded = ?";
+            $params[] = $statusValue;
+            $types .= 'i';
+        } else {
+            // Search by specific field
+            $whereClauses[] = "$searchField LIKE ?";
+            $params[] = '%' . $searchQuery . '%';
+            $types .= 's';
+        }
+    }
+
+    $whereSQL = !empty($whereClauses) ? 'WHERE ' . implode(' AND ', $whereClauses) : '';
+
+    // Get total count for pagination
+    $countSql = "SELECT COUNT(*) as total FROM ytb_songs_list $whereSQL";
+    if (!empty($params)) {
         $countStmt = $db->prepare($countSql);
-        $types = str_repeat('s', count($selectedPlaylists));
-        $countStmt->bind_param($types, ...$selectedPlaylists);
+        $countStmt->bind_param($types, ...$params);
         $countStmt->execute();
         $countResult = $countStmt->get_result();
         $totalRows = $countResult->fetch_assoc()['total'];
         $countStmt->close();
     } else {
-        $countSql = "SELECT COUNT(*) as total FROM ytb_songs_list";
         $countResult = $db->query($countSql);
         $totalRows = $countResult->fetch_assoc()['total'];
     }
 
     $totalPages = ceil($totalRows / $itemsPerPage);
 
-    // Get paginated data
-    if (!empty($selectedPlaylists)) {
-        // Build query with multiple playlists and pagination
-        $placeholders = implode(',', array_fill(0, count($selectedPlaylists), '?'));
-        $sql = "SELECT * FROM ytb_songs_list WHERE playlist IN ($placeholders) ORDER BY video_id DESC LIMIT ? OFFSET ?";
-        $stmt = $db->prepare($sql);
+    // Get paginated data with sorting
+    $sql = "SELECT * FROM ytb_songs_list $whereSQL ORDER BY $sortBy $sortOrder LIMIT ? OFFSET ?";
+    $stmt = $db->prepare($sql);
 
-        if (!$stmt) {
-            throw new Exception("Failed to prepare statement");
-        }
-
-        // Bind parameters dynamically (playlists + limit + offset)
-        $types = str_repeat('s', count($selectedPlaylists)) . 'ii';
-        $params = array_merge($selectedPlaylists, [$itemsPerPage, $offset]);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $dbData = $stmt->get_result();
-        $stmt->close();
-    } else {
-        $sql = "SELECT * FROM ytb_songs_list ORDER BY video_id DESC LIMIT ? OFFSET ?";
-        $stmt = $db->prepare($sql);
-        $stmt->bind_param('ii', $itemsPerPage, $offset);
-        $stmt->execute();
-        $dbData = $stmt->get_result();
-        $stmt->close();
+    if (!$stmt) {
+        throw new Exception("Failed to prepare statement");
     }
+
+    // Add pagination parameters
+    $params[] = $itemsPerPage;
+    $params[] = $offset;
+    $types .= 'ii';
+
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $dbData = $stmt->get_result();
+    $stmt->close();
 } catch (Exception $e) {
     error_log("Database error in list.php: " . $e->getMessage());
     $dbData = null;
@@ -164,6 +202,56 @@ try {
                     </div>
                 </div>
 
+                <!-- Search Bar -->
+                <div class="search-container mb-4">
+                    <form method="GET" action="" class="row g-2">
+                        <input type="hidden" name="action" value="list">
+                        <?php if (!empty($selectedPlaylists)): ?>
+                            <input type="hidden" name="playlists" value="<?php echo htmlspecialchars(implode(',', $selectedPlaylists), ENT_QUOTES, 'UTF-8'); ?>">
+                        <?php endif; ?>
+                        <input type="hidden" name="per_page" value="<?php echo $itemsPerPage; ?>">
+                        <input type="hidden" name="sort_by" value="<?php echo $sortBy; ?>">
+                        <input type="hidden" name="sort_order" value="<?php echo $sortOrder; ?>">
+
+                        <div class="col-md-3">
+                            <select name="search_field" class="form-select form-select-sm">
+                                <option value="all" <?php echo $searchField === 'all' ? 'selected' : ''; ?>>All Fields</option>
+                                <option value="artist" <?php echo $searchField === 'artist' ? 'selected' : ''; ?>>Artist</option>
+                                <option value="song" <?php echo $searchField === 'song' ? 'selected' : ''; ?>>Song</option>
+                                <option value="playlist" <?php echo $searchField === 'playlist' ? 'selected' : ''; ?>>Playlist</option>
+                                <option value="status" <?php echo $searchField === 'status' ? 'selected' : ''; ?>>Status</option>
+                            </select>
+                        </div>
+                        <div class="col-md-7">
+                            <input type="text"
+                                   name="search"
+                                   class="form-control form-control-sm"
+                                   placeholder="Search songs..."
+                                   value="<?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?>">
+                        </div>
+                        <div class="col-md-2 d-flex gap-1">
+                            <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                                <i class="fas fa-search"></i>
+                            </button>
+                            <?php if (!empty($searchQuery)): ?>
+                                <a href="?action=list<?php echo !empty($selectedPlaylists) ? '&playlists=' . urlencode(implode(',', $selectedPlaylists)) : ''; ?>&per_page=<?php echo $itemsPerPage; ?>"
+                                   class="btn btn-secondary btn-sm">
+                                    <i class="fas fa-times"></i>
+                                </a>
+                            <?php endif; ?>
+                        </div>
+                    </form>
+                    <?php if (!empty($searchQuery)): ?>
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="fas fa-search me-1"></i>
+                                Searching in <strong><?php echo $searchField === 'all' ? 'all fields' : $searchField; ?></strong>
+                                for "<strong><?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?></strong>"
+                            </small>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
                 <!-- Pagination Controls - Top -->
                 <?php if ($totalRows > 0): ?>
                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -185,17 +273,42 @@ try {
                 </div>
                 <?php endif; ?>
 
-                <div class="table-responsive">
-            <table class="table table-premium">
+                <div class="table-responsive table-container">
+            <table class="table table-premium table-fixed-layout">
                 <thead>
                     <tr>
-                        <th class="text-center"><i class="fas fa-hashtag me-2"></i>ID</th>
-                        <th><i class="fas fa-user me-2"></i>Artist</th>
-                        <th><i class="fas fa-music me-2"></i>Song</th>
-                        <th><i class="fas fa-folder me-2"></i>Playlist</th>
-                        <th><i class="fas fa-link me-2"></i>Link</th>
-                        <th class="text-center"><i class="fas fa-check-circle me-2"></i>Status</th>
-                        <th class="text-center"><i class="fas fa-cog me-2"></i>Actions</th>
+                        <th class="text-center col-id sortable" onclick="sortTable('video_id')">
+                            <i class="fas fa-hashtag me-1"></i>ID
+                            <?php if ($sortBy === 'video_id'): ?>
+                                <i class="fas fa-sort-<?php echo $sortOrder === 'ASC' ? 'up' : 'down'; ?> ms-1"></i>
+                            <?php endif; ?>
+                        </th>
+                        <th class="col-artist sortable" onclick="sortTable('artist')">
+                            <i class="fas fa-user me-1"></i>Artist
+                            <?php if ($sortBy === 'artist'): ?>
+                                <i class="fas fa-sort-<?php echo $sortOrder === 'ASC' ? 'up' : 'down'; ?> ms-1"></i>
+                            <?php endif; ?>
+                        </th>
+                        <th class="col-song sortable" onclick="sortTable('song')">
+                            <i class="fas fa-music me-1"></i>Song
+                            <?php if ($sortBy === 'song'): ?>
+                                <i class="fas fa-sort-<?php echo $sortOrder === 'ASC' ? 'up' : 'down'; ?> ms-1"></i>
+                            <?php endif; ?>
+                        </th>
+                        <th class="text-center col-playlist sortable" onclick="sortTable('playlist')">
+                            <i class="fas fa-folder me-1"></i>Playlist
+                            <?php if ($sortBy === 'playlist'): ?>
+                                <i class="fas fa-sort-<?php echo $sortOrder === 'ASC' ? 'up' : 'down'; ?> ms-1"></i>
+                            <?php endif; ?>
+                        </th>
+                        <th class="col-link"><i class="fas fa-link me-1"></i>Link</th>
+                        <th class="text-center col-status sortable" onclick="sortTable('downloaded')">
+                            <i class="fas fa-check-circle me-1"></i>Status
+                            <?php if ($sortBy === 'downloaded'): ?>
+                                <i class="fas fa-sort-<?php echo $sortOrder === 'ASC' ? 'up' : 'down'; ?> ms-1"></i>
+                            <?php endif; ?>
+                        </th>
+                        <th class="text-center col-actions"><i class="fas fa-cog me-1"></i>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -263,11 +376,18 @@ try {
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <button onclick="confirmDelete(<?php echo (int)$row['video_id']; ?>, <?php echo htmlspecialchars(json_encode($row['song'] ?? 'this song'), ENT_QUOTES, 'UTF-8'); ?>)"
-                                            class="btn btn-delete btn-sm"
-                                            title="Delete song">
-                                        <i class="fas fa-trash-alt me-1"></i>Delete
-                                    </button>
+                                    <div class="btn-group" role="group">
+                                        <button onclick="showMoveModal(<?php echo (int)$row['video_id']; ?>, <?php echo htmlspecialchars(json_encode($row['song'] ?? 'this song'), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($row['playlist'] ?? 'General'), ENT_QUOTES, 'UTF-8'); ?>)"
+                                                class="btn btn-outline-primary btn-sm"
+                                                title="Move to another playlist">
+                                            <i class="fas fa-folder-open me-1"></i>Move
+                                        </button>
+                                        <button onclick="confirmDelete(<?php echo (int)$row['video_id']; ?>, <?php echo htmlspecialchars(json_encode($row['song'] ?? 'this song'), ENT_QUOTES, 'UTF-8'); ?>)"
+                                                class="btn btn-delete btn-sm"
+                                                title="Delete song">
+                                            <i class="fas fa-trash-alt me-1"></i>Delete
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -346,13 +466,66 @@ try {
     </div>
 </div>
 
+<!-- Move Song Modal -->
+<div class="modal fade" id="moveSongModal" tabindex="-1" aria-labelledby="moveSongModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 20px; border: none;">
+            <div class="modal-header" style="border-bottom: 1px solid rgba(0,0,0,0.1);">
+                <h5 class="modal-title" id="moveSongModalLabel">
+                    <i class="fas fa-folder-open me-2" style="color: var(--primary);"></i>Move Song to Playlist
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">
+                    <strong>Song:</strong> <span id="moveSongName"></span><br>
+                    <strong>Current Playlist:</strong> <span id="moveCurrentPlaylist"></span>
+                </p>
+                <div class="mb-3">
+                    <label for="newPlaylistSelect" class="form-label">Select New Playlist:</label>
+                    <select class="form-select" id="newPlaylistSelect" required>
+                        <option value="">-- Select Playlist --</option>
+                        <?php foreach($allPlaylists as $pl): ?>
+                            <option value="<?php echo htmlspecialchars($pl['name'], ENT_QUOTES, 'UTF-8'); ?>">
+                                <?php echo htmlspecialchars($pl['name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo $pl['count']; ?> songs)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="newPlaylistInput" class="form-label">Or Create New Playlist:</label>
+                    <input type="text" class="form-control" id="newPlaylistInput" placeholder="Type new playlist name">
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top: 1px solid rgba(0,0,0,0.1);">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-premium" onclick="confirmMove()">
+                    <i class="fas fa-check me-2"></i>Move Song
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php
 // Helper function to build pagination URLs
 function buildPaginationUrl($page, $perPage, $playlists) {
+    global $searchQuery, $searchField, $sortBy, $sortOrder;
+
     $params = ['action' => 'list', 'page' => $page, 'per_page' => $perPage];
+
     if (!empty($playlists)) {
         $params['playlists'] = implode(',', $playlists);
     }
+
+    if (!empty($searchQuery)) {
+        $params['search'] = $searchQuery;
+        $params['search_field'] = $searchField;
+    }
+
+    $params['sort_by'] = $sortBy;
+    $params['sort_order'] = $sortOrder;
+
     return '?' . http_build_query($params);
 }
 ?>
@@ -376,6 +549,102 @@ function buildPaginationUrl($page, $perPage, $playlists) {
 .playlist-filter-item label {
     cursor: pointer;
     user-select: none;
+}
+
+/* Table Responsive Container */
+.table-container {
+    overflow-x: auto;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Fixed table layout for better control */
+.table-fixed-layout {
+    table-layout: fixed;
+    min-width: 1200px;
+    margin-bottom: 0;
+}
+
+/* Column widths - ensures Actions column is always visible */
+.table-fixed-layout .col-id {
+    width: 70px;
+}
+
+.table-fixed-layout .col-artist {
+    width: 180px;
+}
+
+.table-fixed-layout .col-song {
+    width: 200px;
+}
+
+.table-fixed-layout .col-playlist {
+    width: 130px;
+}
+
+.table-fixed-layout .col-link {
+    width: 220px;
+}
+
+.table-fixed-layout .col-status {
+    width: 130px;
+}
+
+.table-fixed-layout .col-actions {
+    width: 200px;
+    min-width: 200px; /* Ensure Actions column never shrinks */
+}
+
+/* Text overflow handling for long content */
+.table-fixed-layout td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Allow wrapping in Actions column for buttons */
+.table-fixed-layout td:last-child {
+    white-space: normal;
+}
+
+/* Improve button group spacing in Actions column */
+.btn-group .btn {
+    white-space: nowrap;
+}
+
+/* Make action buttons more compact on smaller screens */
+@media (max-width: 768px) {
+    .btn-group .btn-sm {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+
+    .btn-group .btn-sm i {
+        margin-right: 4px !important;
+    }
+}
+
+/* Sortable table headers */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.sortable:hover {
+    background: rgba(255, 255, 255, 0.2) !important;
+}
+
+.sortable:active {
+    transform: scale(0.98);
+}
+
+/* Search container styles */
+.search-container {
+    background: rgba(255, 255, 255, 0.5);
+    padding: 15px;
+    border-radius: 15px;
+    border: 1px solid rgba(102, 126, 234, 0.2);
 }
 
 /* Pagination Styles */
@@ -468,6 +737,25 @@ function buildPaginationUrl($page, $perPage, $playlists) {
 </style>
 
 <script>
+// Sort table functionality
+function sortTable(column) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentSort = urlParams.get('sort_by');
+    const currentOrder = urlParams.get('sort_order');
+
+    // Toggle order if clicking same column, otherwise default to DESC
+    let newOrder = 'desc';
+    if (currentSort === column && currentOrder === 'desc') {
+        newOrder = 'asc';
+    }
+
+    urlParams.set('sort_by', column);
+    urlParams.set('sort_order', newOrder);
+    urlParams.set('page', '1'); // Reset to first page when sorting
+
+    window.location.href = '?' + urlParams.toString();
+}
+
 function confirmDelete(id, songName) {
     if(confirm('Are you sure you want to delete "' + songName + '"?\n\nThis will remove the song from the database and delete the MP3 file.')) {
         // Create and submit a hidden form with CSRF token
@@ -558,4 +846,106 @@ function changeItemsPerPage(perPage) {
     urlParams.set('page', '1'); // Reset to first page when changing items per page
     window.location.href = '?' + urlParams.toString();
 }
+
+// Move song functionality
+let currentMoveSongId = null;
+
+function showMoveModal(id, songName, currentPlaylist) {
+    currentMoveSongId = id;
+    document.getElementById('moveSongName').textContent = songName;
+    document.getElementById('moveCurrentPlaylist').textContent = currentPlaylist;
+
+    // Clear previous selections
+    document.getElementById('newPlaylistSelect').value = '';
+    document.getElementById('newPlaylistInput').value = '';
+
+    // Remove current playlist from dropdown options (disable it)
+    const select = document.getElementById('newPlaylistSelect');
+    Array.from(select.options).forEach(option => {
+        if (option.value === currentPlaylist) {
+            option.disabled = true;
+            option.textContent += ' (Current)';
+        } else {
+            option.disabled = false;
+            // Remove (Current) text if it exists
+            option.textContent = option.textContent.replace(' (Current)', '');
+        }
+    });
+
+    // Show modal using Bootstrap 5
+    const modal = new bootstrap.Modal(document.getElementById('moveSongModal'));
+    modal.show();
+}
+
+function confirmMove() {
+    const selectValue = document.getElementById('newPlaylistSelect').value;
+    const inputValue = document.getElementById('newPlaylistInput').value.trim();
+
+    // Determine which playlist to use
+    const newPlaylist = inputValue || selectValue;
+
+    console.log('confirmMove called', {
+        currentMoveSongId: currentMoveSongId,
+        selectValue: selectValue,
+        inputValue: inputValue,
+        newPlaylist: newPlaylist
+    });
+
+    if (!newPlaylist) {
+        alert('Please select a playlist or enter a new playlist name.');
+        return;
+    }
+
+    // Close the modal before submitting
+    const modalElement = document.getElementById('moveSongModal');
+    const modalInstance = bootstrap.Modal.getInstance(modalElement);
+    if (modalInstance) {
+        modalInstance.hide();
+    }
+
+    // Create and submit a hidden form with CSRF token
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '?action=move_song';
+
+    const idInput = document.createElement('input');
+    idInput.type = 'hidden';
+    idInput.name = 'id';
+    idInput.value = currentMoveSongId;
+    form.appendChild(idInput);
+
+    const playlistInput = document.createElement('input');
+    playlistInput.type = 'hidden';
+    playlistInput.name = 'playlist';
+    playlistInput.value = newPlaylist;
+    form.appendChild(playlistInput);
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '<?php echo Csrf::generateToken(); ?>';
+    form.appendChild(csrfInput);
+
+    console.log('Submitting form', {
+        action: form.action,
+        id: idInput.value,
+        playlist: playlistInput.value
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Auto-switch between select and input
+document.getElementById('newPlaylistSelect')?.addEventListener('change', function() {
+    if (this.value) {
+        document.getElementById('newPlaylistInput').value = '';
+    }
+});
+
+document.getElementById('newPlaylistInput')?.addEventListener('input', function() {
+    if (this.value) {
+        document.getElementById('newPlaylistSelect').value = '';
+    }
+});
 </script>

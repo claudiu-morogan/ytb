@@ -25,6 +25,9 @@
             case 'delete_playlist':
                 require 'html/actions/delete_playlist.php';
                 break;
+            case 'move_song':
+                require 'html/actions/move_song.php';
+                break;
             case 'debug_delete':
                 require 'html/actions/debug_delete.php';
                 break;
